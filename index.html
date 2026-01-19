@@ -49,7 +49,7 @@
       gap: 6px;
     }
     #hpBarOuter {
-      width: 160px;          /* medium size */
+      width: 160px;
       height: 14px;
       border: 1px solid #555;
       background: #111;
@@ -58,8 +58,8 @@
     #hpBarInner {
       height: 100%;
       width: 100%;
-      background: #00c853;   /* default green */
-      transition: none;      /* instant update */
+      background: #00c853;
+      transition: none;
     }
     #hpText {
       min-width: 60px;
@@ -180,13 +180,12 @@ function updateHPHUD() {
 
   hpBarInner.style.width = (ratio * 100) + "%";
 
-  // Color: green (>=70), yellow (30–69), red (<30)
   if (percent >= 70) {
-    hpBarInner.style.background = "#00c853"; // green
+    hpBarInner.style.background = "#00c853";
   } else if (percent >= 30) {
-    hpBarInner.style.background = "#ffd600"; // yellow
+    hpBarInner.style.background = "#ffd600";
   } else {
-    hpBarInner.style.background = "#d50000"; // red
+    hpBarInner.style.background = "#d50000";
   }
 
   hpText.textContent = `${Math.max(0, Math.round(player.hp))} HP`;
@@ -278,7 +277,7 @@ const equipment = {
   charm: null
 };
 
-// Inventory UI layout (in canvas coordinates)
+// Inventory UI layout
 const invUI = {
   x: W / 2 - 260,
   y: H / 2 - 160,
@@ -289,7 +288,7 @@ const invUI = {
 };
 
 // Drag state
-let draggingItem = null; // {source: "inventory"|"slot", index or slotKey, itemId}
+let draggingItem = null;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 let mouseX = 0;
@@ -387,17 +386,9 @@ let helmetActive = false;
 let helmetCooldownRounds = 0;
 
 let projectiles = [];
-
-// Giant wave instances
 let waves = [];
-
-// Lightning storm strikes
 let lightningStrikes = [];
-
-// Inferno rings
 let infernos = [];
-
-// Shared special cooldown
 let specialCooldown = 0;
 
 /* =========================================================
@@ -444,8 +435,7 @@ function getRandomWeaponToDrop() {
     } else if (w === "artemisBow") {
       if (!weaponsOwned.artemisBow) candidates.push(w);
     } else if (w === "chaos_charm" || w === "blood_charm") {
-      // charms always allowed to drop if not already in inventory
-      const already = inventory.some(it => it.id === w);
+      const already = inventory.some(it => it && it.id === w);
       if (!already) candidates.push(w);
     } else {
       if (!weaponsOwned[w]) candidates.push(w);
@@ -494,33 +484,29 @@ function collides(a, b) {
     a.y + a.h > b.y
   );
 }
+
 /* =========================================================
    Player movement & physics
    ========================================================= */
 function updatePlayer(dt) {
-  // Horizontal movement
   let move = 0;
   if (keys["arrowleft"] || keys["a"]) move -= 1;
   if (keys["arrowright"] || keys["d"]) move += 1;
 
   player.vx = move * player.speed;
 
-  // Jump
   if ((keys["arrowup"] || keys["w"]) && player.onGround) {
     player.vy = -player.jump;
     player.onGround = false;
   }
 
-  // Gravity
   if (!player.onGround) {
     player.vy += 900 * dt;
   }
 
-  // Apply movement
   player.x += player.vx * dt;
   player.y += player.vy * dt;
 
-  // Ground clamp
   if (!atSea) {
     if (player.y + player.h >= groundY) {
       player.y = groundY - player.h;
@@ -529,7 +515,6 @@ function updatePlayer(dt) {
     }
   }
 
-  // Rolling
   if (player.isRolling) {
     player.rollTimer -= dt;
     if (player.rollTimer <= 0) {
@@ -650,7 +635,6 @@ function specialMelee() {
     }
   }
 
-  // Greek ships (level 35)
   if (currentLevel === 35 && greekShips.length > 0) {
     for (let i = greekShips.length - 1; i >= 0; i--) {
       const ship = greekShips[i];
@@ -760,6 +744,15 @@ function spawnProjectile(x, y, speed, damage, type) {
 }
 
 /* =========================================================
+   Time powers (Cronos) state
+   ========================================================= */
+let timeSlowActive = false;
+let timeSlowTimer = 0;
+
+let timeFreezeActive = false;
+let timeFreezeTimer = 0;
+
+/* =========================================================
    Controls
    ========================================================= */
 addEventListener("keydown", e => {
@@ -851,6 +844,50 @@ addEventListener("keydown", e => {
       startLevel(35);
     }
   }
+
+  /* =====================================================
+     Cronos Time Powers
+     C: Skip level
+     B: Slow time
+     N: Rewind HP
+     M: Freeze time
+     ===================================================== */
+  if (k === "c" && gameState === "playing") {
+    if (currentLevel < 35) {
+      toast("Cronos bends time—skipping ahead!");
+      levelComplete = true;
+      setTimeout(() => startLevel(currentLevel + 1), 400);
+    } else {
+      toast("Time cannot skip the final fate...");
+    }
+  }
+
+  if (k === "b" && gameState === "playing") {
+    if (!timeSlowActive) {
+      timeSlowActive = true;
+      timeSlowTimer = 5;
+      toast("Time slows around you...");
+    } else {
+      toast("Time is already slowed...");
+    }
+  }
+
+  if (k === "n" && gameState === "playing") {
+    const heal = player.maxHp * 0.3;
+    player.hp = Math.min(player.maxHp, player.hp + heal);
+    updateHPHUD();
+    toast("Cronos rewinds your wounds...");
+  }
+
+  if (k === "m" && gameState === "playing") {
+    if (!timeFreezeActive) {
+      timeFreezeActive = true;
+      timeFreezeTimer = 3;
+      toast("Time freezes in place...");
+    } else {
+      toast("Time is already frozen...");
+    }
+  }
 });
 
 addEventListener("keyup", e => {
@@ -866,6 +903,7 @@ function equipWeapon(key) {
   updateEquipHUD();
   toast(itemData[key].name + " equipped");
 }
+
 /* =========================================================
    Projectile updates (arrows, flames, lightning, etc.)
    ========================================================= */
@@ -980,13 +1018,11 @@ function updateProjectiles(dt) {
     p.x += p.vx * dt;
     if (p.vy !== undefined) p.y += p.vy * dt;
 
-    // Remove off-screen
     if (p.x > W || p.x + p.w < 0 || p.y > H) {
       projectiles.splice(i, 1);
       continue;
     }
 
-    // Boss hit
     if (boss && collides(p, boss)) {
       boss.hp -= p.damage;
       toast("Projectile hit " + boss.name + "!");
@@ -1001,7 +1037,6 @@ function updateProjectiles(dt) {
       continue;
     }
 
-    // Greek ships hit
     if (currentLevel === 35 && greekShips.length > 0) {
       let hitShip = false;
 
@@ -1060,7 +1095,6 @@ function updateWaves(dt) {
       h: wave.h
     };
 
-    // Boss hit
     if (boss && collides(hitbox, boss)) {
       boss.hp -= wave.damage;
       toast("Wave smashes " + boss.name + "!");
@@ -1073,7 +1107,6 @@ function updateWaves(dt) {
       }
     }
 
-    // Ships hit
     if (currentLevel === 35 && greekShips.length > 0) {
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
@@ -1095,7 +1128,6 @@ function updateWaves(dt) {
       }
     }
 
-    // Remove wave when off-screen
     if (wave.x > W && wave.w > W * 1.2) {
       wave.alive = false;
     }
@@ -1122,7 +1154,6 @@ function updateLightning(dt) {
       h: strike.h
     };
 
-    // Boss hit
     if (boss && collides(box, boss)) {
       boss.hp -= strike.damage;
 
@@ -1134,7 +1165,6 @@ function updateLightning(dt) {
       }
     }
 
-    // Ships hit
     if (currentLevel === 35 && greekShips.length > 0) {
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
@@ -1186,7 +1216,6 @@ function updateInfernos(dt) {
       return dx * dx + dy * dy <= r2;
     }
 
-    // Boss hit
     if (boss && inside(boss)) {
       boss.hp -= inf.damage;
 
@@ -1198,7 +1227,6 @@ function updateInfernos(dt) {
       }
     }
 
-    // Ships hit
     if (currentLevel === 35 && greekShips.length > 0) {
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
@@ -1221,6 +1249,7 @@ function updateInfernos(dt) {
     }
   }
 }
+
 /* =========================================================
    Inventory drawing helpers
    ========================================================= */
@@ -1269,15 +1298,14 @@ function drawInventoryUI() {
   ctx.font = "20px sans-serif";
   ctx.fillText("Inventory (I to close)", invUI.x + 20, invUI.y + 30);
 
-  // Equipment slots
   const slotSize = 56;
   const slotY = invUI.y + invUI.padding + 20;
   const slotXStart = invUI.x + invUI.padding + 40;
   const labels = ["Weapon", "Helmet", "Shield", "Charm"];
-  const keys = ["weapon", "helmet", "shield", "charm"];
+  const keysSlots = ["weapon", "helmet", "shield", "charm"];
 
   ctx.font = "14px sans-serif";
-  for (let i = 0; i < keys.length; i++) {
+  for (let i = 0; i < keysSlots.length; i++) {
     const sx = slotXStart + i * (slotSize + 40);
     const sy = slotY;
 
@@ -1287,13 +1315,12 @@ function drawInventoryUI() {
     ctx.fillStyle = "#fff";
     ctx.fillText(labels[i], sx, sy + slotSize + 16);
 
-    const itemId = equipment[keys[i]];
+    const itemId = equipment[keysSlots[i]];
     if (itemId) {
       drawItemIcon(itemId, sx + 4, sy + 4, slotSize - 8);
     }
   }
 
-  // Inventory grid
   const invX = invUI.x + invUI.padding;
   const invY = invUI.y + invUI.padding + 80;
 
@@ -1320,7 +1347,6 @@ function drawInventoryUI() {
     }
   }
 
-  // Draw dragged item
   if (draggingItem) {
     const size = 48;
     drawItemIcon(draggingItem.itemId, mouseX - size / 2, mouseY - size / 2, size);
@@ -1337,7 +1363,6 @@ canvas.addEventListener("mousedown", e => {
   mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
   mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
 
-  // Inventory cells
   const invX = invUI.x + invUI.padding;
   const invY = invUI.y + invUI.padding + 80;
 
@@ -1367,7 +1392,6 @@ canvas.addEventListener("mousedown", e => {
     }
   }
 
-  // Equipment slots
   const slotSize = 56;
   const slotY = invUI.y + invUI.padding + 20;
   const slotXStart = invUI.x + invUI.padding + 40;
@@ -1420,7 +1444,6 @@ canvas.addEventListener("mouseup", e => {
 
   let placed = false;
 
-  // Try equipment slots
   const slotSize = 56;
   const slotY = invUI.y + invUI.padding + 20;
   const slotXStart = invUI.x + invUI.padding + 40;
@@ -1452,7 +1475,6 @@ canvas.addEventListener("mouseup", e => {
     }
   }
 
-  // Try inventory grid
   if (!placed) {
     const invX = invUI.x + invUI.padding;
     const invY = invUI.y + invUI.padding + 80;
@@ -1637,6 +1659,7 @@ function spawnAlliesForLevel() {
     });
   }
 }
+
 /* =========================================================
    Boss & ship spawning
    ========================================================= */
@@ -1731,13 +1754,11 @@ function startLevel(n) {
   finalVictory = false;
   atSea = (n >= 31 && n <= 35);
 
-  // Helmet cooldown
   if (n !== 0 && helmetCooldownRounds > 0) {
     helmetCooldownRounds = Math.max(helmetCooldownRounds - 1, 0);
   }
   helmetActive = false;
 
-  // Player placement
   if (atSea) {
     boat = {
       x: W / 2 - 160,
@@ -1753,7 +1774,6 @@ function startLevel(n) {
     player.y = groundY - player.h;
   }
 
-  // Reset player state
   player.vx = 0;
   player.vy = 0;
   player.onGround = true;
@@ -1765,7 +1785,6 @@ function startLevel(n) {
   player.hp = player.maxHp;
   updateHPHUD();
 
-  // Reset world
   boss = null;
   greekShips = [];
   groundObstacles = [];
@@ -1785,21 +1804,23 @@ function startLevel(n) {
   levelComplete = false;
   specialCooldown = 0;
 
+  timeSlowActive = false;
+  timeFreezeActive = false;
+  timeSlowTimer = 0;
+  timeFreezeTimer = 0;
+
   document.getElementById("level").textContent = n;
 
-  // Tutorial
   if (n === 0) {
     toast("Tutorial: Move (Arrows/WASD), Jump (Up/W), Attack (Space), Specials (J/K/L), Roll (Down), Switch (Q/W/E/R/T/Z/V/Y/X), Inventory (I).");
     return;
   }
 
-  // Boss levels
   if (bossDefs[n]) {
     spawnBoss(bossDefs[n]);
     spawnAlliesForLevel();
   }
 
-  // Sea levels
   if (n === 35) {
     spawnGreekShipsForFinal();
     toast("Final Battle: Defeat the Greek ships!");
@@ -1819,6 +1840,12 @@ function applyBossCollisionDamage() {
 
   if (collides(player, boss)) {
     if (damageCooldown <= 0 && !deathLock) {
+      if (helmetActive) {
+        toast(boss.name + " cannot see you!");
+        damageCooldown = 0.4;
+        return;
+      }
+
       const dmg = scaleEnemyDamage(15);
 
       if (shieldActive) {
@@ -1857,6 +1884,12 @@ function applyShipCollisionDamage(ship) {
 
   if (collides(player, shipBox)) {
     if (damageCooldown <= 0 && !deathLock) {
+      if (helmetActive) {
+        toast("The ship cannot find you!");
+        damageCooldown = 0.4;
+        return;
+      }
+
       const dmg = scaleEnemyDamage(15);
 
       if (shieldActive) {
@@ -1917,7 +1950,6 @@ function updateObstacles(dt) {
   const dmgFalling = scaleEnemyDamage(7);
   const dmgLow = scaleEnemyDamage(5);
 
-  // Ground obstacles
   for (let i = groundObstacles.length - 1; i >= 0; i--) {
     const o = groundObstacles[i];
     o.x -= o.speed * dt;
@@ -1932,7 +1964,6 @@ function updateObstacles(dt) {
     }
   }
 
-  // Falling obstacles
   for (let i = fallingObstacles.length - 1; i >= 0; i--) {
     const o = fallingObstacles[i];
     o.y += o.vy * dt;
@@ -1947,7 +1978,6 @@ function updateObstacles(dt) {
     }
   }
 
-  // Low obstacles
   for (let i = lowObstacles.length - 1; i >= 0; i--) {
     const o = lowObstacles[i];
     o.x -= o.speed * dt;
@@ -1967,7 +1997,6 @@ function updateObstacles(dt) {
    Level progression
    ========================================================= */
 function checkLevelProgress() {
-  // Boss levels
   if (isBossLevel(currentLevel) && !levelComplete) {
     if (!boss && weaponDrops.length === 0) {
       levelComplete = true;
@@ -1976,7 +2005,6 @@ function checkLevelProgress() {
     }
   }
 
-  // Land levels
   if (!isBossLevel(currentLevel) && !atSea && !levelComplete && currentLevel < 31) {
     if (player.x + player.w >= W - 5) {
       levelComplete = true;
@@ -1985,7 +2013,6 @@ function checkLevelProgress() {
     }
   }
 
-  // Sea escape (31–34)
   if (atSea && currentLevel >= 31 && currentLevel <= 34 && !levelComplete) {
     if (player.x + player.w >= W - 5) {
       levelComplete = true;
@@ -1994,7 +2021,6 @@ function checkLevelProgress() {
     }
   }
 
-  // Final victory
   if (currentLevel === 35 && !levelComplete && greekShips.length === 0) {
     levelComplete = true;
     finalVictory = true;
@@ -2003,6 +2029,48 @@ function checkLevelProgress() {
     gameState = "ended";
   }
 }
+
+/* =========================================================
+   Weapon drop pickup logic
+   ========================================================= */
+function updateWeaponDrops() {
+  for (let i = weaponDrops.length - 1; i >= 0; i--) {
+    const drop = weaponDrops[i];
+
+    if (collides(player, drop)) {
+      const key = drop.weaponKey;
+
+      if (key === "helmet") {
+        if (!gearOwned.helmet) {
+          gearOwned.helmet = true;
+          addItemToInventory("helmet_invisibility");
+          toast("You obtained the Helmet of Invisibility!");
+        }
+      } else if (key === "shield") {
+        if (!weaponsOwned.shield) {
+          weaponsOwned.shield = true;
+          addItemToInventory("shield_item");
+          toast("You obtained a Shield!");
+        }
+      } else if (key === "chaos_charm" || key === "blood_charm") {
+        const already = inventory.some(it => it && it.id === key);
+        if (!already) {
+          addItemToInventory(key);
+          toast("You obtained the " + itemData[key].name + "!");
+        }
+      } else {
+        if (!weaponsOwned[key]) {
+          weaponsOwned[key] = true;
+          addItemToInventory(key);
+          toast("You obtained the " + itemData[key].name + "!");
+        }
+      }
+
+      weaponDrops.splice(i, 1);
+    }
+  }
+}
+
 /* =========================================================
    Drawing
    ========================================================= */
@@ -2229,23 +2297,41 @@ function draw() {
    Main update loop
    ========================================================= */
 function update(now) {
-  const dt = (now - last) / 1000;
+  const rawDt = (now - last) / 1000;
   last = now;
 
-  if (damageCooldown > 0) damageCooldown -= dt;
-  if (specialCooldown > 0) specialCooldown -= dt;
+  if (damageCooldown > 0) damageCooldown -= rawDt;
+  if (specialCooldown > 0) specialCooldown -= rawDt;
+
+  if (timeSlowActive) {
+    timeSlowTimer -= rawDt;
+    if (timeSlowTimer <= 0) {
+      timeSlowActive = false;
+      toast("Time returns to normal.");
+    }
+  }
+
+  if (timeFreezeActive) {
+    timeFreezeTimer -= rawDt;
+    if (timeFreezeTimer <= 0) {
+      timeFreezeActive = false;
+      toast("Time flows again.");
+    }
+  }
+
+  const worldDt = timeFreezeActive
+    ? 0
+    : (timeSlowActive ? rawDt * 0.5 : rawDt);
 
   if (gameState === "playing") {
-    t += dt;
+    t += rawDt;
 
-    updatePlayer(dt);
+    updatePlayer(rawDt);
 
-    // Boat movement
     if (atSea && boat && currentLevel >= 31 && currentLevel <= 34) {
-      boat.x += 60 * dt;
+      boat.x += 60 * worldDt;
     }
 
-    // Keep player on boat
     if (atSea && boat && currentLevel >= 31 && currentLevel <= 35) {
       if (player.x < boat.x) player.x = boat.x;
       if (player.x + player.w > boat.x + boat.w) player.x = boat.x + boat.w - player.w;
@@ -2258,21 +2344,20 @@ function update(now) {
       }
     }
 
-    // Update all systems
-    updateProjectiles(dt);
-    updateWaves(dt);
-    updateLightning(dt);
-    updateInfernos(dt);
-    updateObstacles(dt);
-    updateAllies(dt);
+    updateProjectiles(worldDt);
+    updateWaves(worldDt);
+    updateLightning(worldDt);
+    updateInfernos(worldDt);
+    updateObstacles(worldDt);
+    updateAllies(worldDt);
+    updateWeaponDrops();
 
-    // Boss & ship collision damage
     applyBossCollisionDamage();
 
     if (currentLevel === 35) {
       for (let i = greekShips.length - 1; i >= 0; i--) {
         const ship = greekShips[i];
-        ship.x += ship.vx * dt;
+        ship.x += ship.vx * worldDt;
 
         applyShipCollisionDamage(ship);
 
@@ -2282,35 +2367,26 @@ function update(now) {
       }
     }
 
-    // Obstacle spawning
     if (!isBossLevel(currentLevel) && currentLevel !== 35) {
-      groundSpawnTimer += dt;
+      groundSpawnTimer += worldDt;
       if (groundSpawnTimer > 2) {
         if (Math.random() < 0.25) spawnLowObstacle();
         else spawnGroundObstacle();
         groundSpawnTimer = 0;
       }
 
-      fallingSpawnTimer += dt;
+      fallingSpawnTimer += worldDt;
       if (fallingSpawnTimer > 1.5) {
         spawnFallingObstacle();
         fallingSpawnTimer = 0;
       }
     }
 
-    // Level progression
     checkLevelProgress();
   }
 
   draw();
   requestAnimationFrame(update);
-}
-
-/* =========================================================
-   Toast helper
-   ========================================================= */
-function toast(msg) {
-  document.getElementById("msg").textContent = msg;
 }
 
 /* =========================================================
@@ -2374,6 +2450,13 @@ function unlockAll() {
   }
 
   toast("All weapons and gear activated");
+}
+
+/* =========================================================
+   Toast helper
+   ========================================================= */
+function toast(msg) {
+  document.getElementById("msg").textContent = msg;
 }
 
 /* =========================================================
