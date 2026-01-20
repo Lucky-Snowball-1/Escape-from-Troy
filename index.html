@@ -276,10 +276,12 @@ for (const id in itemImageFiles) {
   itemImages[id] = img;
 }
 
-// Inventory grid (simple 4x4)
+// Inventory grid: 4 columns, 25 rows = 100 slots (scrollable view)
 const inventory = []; // {id}
 const INVENTORY_COLS = 4;
-const INVENTORY_ROWS = 4;
+const INVENTORY_ROWS = 25;           // total rows (100 slots)
+const VISIBLE_INVENTORY_ROWS = 4;    // rows visible at once
+let inventoryScrollRow = 0;          // top visible row
 
 // Equipment slots
 const equipment = {
@@ -1188,7 +1190,6 @@ function updateWaves(dt) {
     if (boss && collides(hitbox, boss)) {
       boss.hp -= wave.damage;
       toast("Wave smashes " + boss.name + "!");
-
       if (boss.hp <= 0) {
         toast(boss.name + " defeated by the wave!");
         lastBossBeaten = currentLevel;
@@ -1377,7 +1378,7 @@ function drawItemIcon(id, x, y, size) {
 }
 
 /* =========================================================
-   Inventory UI
+   Inventory UI (scrollable 100 slots)
    ========================================================= */
 function drawInventoryUI() {
   ctx.fillStyle = "rgba(0,0,0,0.7)";
@@ -1419,9 +1420,13 @@ function drawInventoryUI() {
   const invX = invUI.x + invUI.padding;
   const invY = invUI.y + invUI.padding + 80;
 
-  for (let row = 0; row < INVENTORY_ROWS; row++) {
+  // visible rows only, with scroll offset
+  for (let row = 0; row < VISIBLE_INVENTORY_ROWS; row++) {
+    const actualRow = row + inventoryScrollRow;
+    if (actualRow >= INVENTORY_ROWS) break;
+
     for (let col = 0; col < INVENTORY_COLS; col++) {
-      const idx = row * INVENTORY_COLS + col;
+      const idx = actualRow * INVENTORY_COLS + col;
       const cellX = invX + col * invUI.cellSize;
       const cellY = invY + row * invUI.cellSize;
 
@@ -1442,6 +1447,16 @@ function drawInventoryUI() {
     }
   }
 
+  // simple scroll indicator
+  ctx.fillStyle = "#ccc";
+  ctx.font = "12px sans-serif";
+  const maxRowStart = Math.max(0, INVENTORY_ROWS - VISIBLE_INVENTORY_ROWS);
+  ctx.fillText(
+    `Scroll: row ${inventoryScrollRow + 1} / ${maxRowStart + 1}`,
+    invUI.x + invUI.w - 180,
+    invUI.y + invUI.h - 10
+  );
+
   if (draggingItem) {
     const size = 48;
     drawItemIcon(draggingItem.itemId, mouseX - size / 2, mouseY - size / 2, size);
@@ -1449,7 +1464,7 @@ function drawInventoryUI() {
 }
 
 /* =========================================================
-   Inventory drag & drop
+   Inventory drag & drop (scroll-aware)
    ========================================================= */
 canvas.addEventListener("mousedown", e => {
   if (gameState !== "inventory") return;
@@ -1461,9 +1476,12 @@ canvas.addEventListener("mousedown", e => {
   const invX = invUI.x + invUI.padding;
   const invY = invUI.y + invUI.padding + 80;
 
-  for (let row = 0; row < INVENTORY_ROWS; row++) {
+  for (let row = 0; row < VISIBLE_INVENTORY_ROWS; row++) {
+    const actualRow = row + inventoryScrollRow;
+    if (actualRow >= INVENTORY_ROWS) break;
+
     for (let col = 0; col < INVENTORY_COLS; col++) {
-      const idx = row * INVENTORY_COLS + col;
+      const idx = actualRow * INVENTORY_COLS + col;
       const cellX = invX + col * invUI.cellSize;
       const cellY = invY + row * invUI.cellSize;
 
@@ -1574,9 +1592,12 @@ canvas.addEventListener("mouseup", e => {
     const invX = invUI.x + invUI.padding;
     const invY = invUI.y + invUI.padding + 80;
 
-    for (let row = 0; row < INVENTORY_ROWS; row++) {
+    for (let row = 0; row < VISIBLE_INVENTORY_ROWS; row++) {
+      const actualRow = row + inventoryScrollRow;
+      if (actualRow >= INVENTORY_ROWS) break;
+
       for (let col = 0; col < INVENTORY_COLS; col++) {
-        const idx = row * INVENTORY_COLS + col;
+        const idx = actualRow * INVENTORY_COLS + col;
         const cellX = invX + col * invUI.cellSize;
         const cellY = invY + row * invUI.cellSize;
 
@@ -1615,6 +1636,22 @@ canvas.addEventListener("mouseup", e => {
 });
 
 /* =========================================================
+   Inventory scroll (mouse wheel)
+   ========================================================= */
+canvas.addEventListener("wheel", e => {
+  if (gameState !== "inventory") return;
+
+  const delta = Math.sign(e.deltaY);
+  const maxStartRow = Math.max(0, INVENTORY_ROWS - VISIBLE_INVENTORY_ROWS);
+
+  inventoryScrollRow += delta;
+  if (inventoryScrollRow < 0) inventoryScrollRow = 0;
+  if (inventoryScrollRow > maxStartRow) inventoryScrollRow = maxStartRow;
+
+  e.preventDefault();
+}, { passive: false });
+
+/* =========================================================
    Equipment effects
    ========================================================= */
 function applyEquipmentEffects() {
@@ -1632,7 +1669,8 @@ function applyEquipmentEffects() {
    Inventory helpers
    ========================================================= */
 function addItemToInventory(id) {
-  for (let i = 0; i < INVENTORY_ROWS * INVENTORY_COLS; i++) {
+  const totalSlots = INVENTORY_ROWS * INVENTORY_COLS;
+  for (let i = 0; i < totalSlots; i++) {
     if (!inventory[i]) {
       inventory[i] = { id };
       return;
@@ -1977,7 +2015,6 @@ function applyShipCollisionDamage(ship) {
     w: ship.w,
     h: ship.h
   };
-
   if (collides(player, shipBox)) {
     if (damageCooldown <= 0 && !deathLock) {
       if (helmetActive) {
