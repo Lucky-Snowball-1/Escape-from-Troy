@@ -228,6 +228,23 @@ for (const name in bossImageSources) {
 }
 
 /* =========================================================
+   Ally images
+   ========================================================= */
+const allyImageSources = {
+  hector: "allies/hector.png",
+  paris:  "allies/paris.png",
+  priam:  "allies/priam.png",
+  helen:  "allies/helen.png"
+};
+
+const allyImages = {};
+for (const key in allyImageSources) {
+  const img = new Image();
+  img.src = allyImageSources[key];
+  allyImages[key] = img;
+}
+
+/* =========================================================
    Item data, icons & inventory
    ========================================================= */
 const itemData = {
@@ -1153,7 +1170,6 @@ function updateProjectiles(dt) {
 
     if (currentLevel === 35 && greekShips.length > 0) {
       let hitShip = false;
-
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
         const shipBox = {
@@ -1762,17 +1778,23 @@ function addItemToInventory(id) {
 }
 
 /* =========================================================
-   Allies drawing
+   Allies drawing (PNG sprites)
    ========================================================= */
 function drawAllies() {
   allies.forEach(a => {
-    if (a.type === "hector") ctx.fillStyle = "#66ff66";
-    else if (a.type === "paris") ctx.fillStyle = "#66aaff";
-    else if (a.type === "priam") ctx.fillStyle = "#ffcc66";
-    else if (a.type === "helen") ctx.fillStyle = "#ff99ff";
-    else ctx.fillStyle = "#88ff88";
+    const img = allyImages[a.type];
+    if (img && img.complete && img.naturalWidth > 0) {
+      ctx.drawImage(img, a.x, a.y, a.w, a.h);
+    } else {
+      // Fallback colored rectangles if image missing
+      if (a.type === "hector") ctx.fillStyle = "#66ff66";
+      else if (a.type === "paris") ctx.fillStyle = "#66aaff";
+      else if (a.type === "priam") ctx.fillStyle = "#ffcc66";
+      else if (a.type === "helen") ctx.fillStyle = "#ff99ff";
+      else ctx.fillStyle = "#88ff88";
 
-    ctx.fillRect(a.x, a.y, a.w, a.h);
+      ctx.fillRect(a.x, a.y, a.w, a.h);
+    }
   });
 }
 
@@ -1931,13 +1953,24 @@ let groundSpawnTimer = 0;
 let fallingSpawnTimer = 0;
 
 function spawnGroundObstacle() {
-  groundObstacles.push({
-    x: W + 40,
-    y: atSea ? seaY - 30 : groundY - 30,
-    w: 30,
-    h: 30,
-    speed: 200
-  });
+  // Make sea flotsam bigger so they actually hit the player
+  if (atSea) {
+    groundObstacles.push({
+      x: W + 40,
+      y: seaY - 50,
+      w: 80,
+      h: 50,
+      speed: 200
+    });
+  } else {
+    groundObstacles.push({
+      x: W + 40,
+      y: groundY - 30,
+      w: 30,
+      h: 30,
+      speed: 200
+    });
+  }
 }
 
 function spawnFallingObstacle() {
