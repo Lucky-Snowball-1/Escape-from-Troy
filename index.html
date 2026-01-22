@@ -127,6 +127,12 @@ const difficulties = {
 
 let currentDifficulty = "medium";
 
+/* === Potion-level buffs (last one level) === */
+let potionDamageMultiplier = 1;
+let potionSpeedMultiplier = 1;
+let potionJumpMultiplier = 1;
+let potionAegisActive = false; // one free hit
+
 function setDifficulty(key) {
   if (!difficulties[key]) return;
   currentDifficulty = key;
@@ -137,7 +143,7 @@ function setDifficulty(key) {
 
 function scalePlayerDamage(base) {
   const d = difficulties[currentDifficulty] || difficulties.medium;
-  return base * d.playerDamage;
+  return base * d.playerDamage * potionDamageMultiplier;
 }
 
 function scaleEnemyDamage(base) {
@@ -272,7 +278,13 @@ const itemData = {
   mount_horse:  { id: "mount_horse",  name: "Horse Mount",        type: "mount",   slot: "mount" },
 
   chariot_normal: { id: "chariot_normal", name: "Chariot",        type: "chariot", slot: "chariot" },
-  chariot_helios: { id: "chariot_helios", name: "Helios Chariot", type: "chariot", slot: "chariot" }
+  chariot_helios: { id: "chariot_helios", name: "Helios Chariot", type: "chariot", slot: "chariot" },
+
+  /* === Potions (consumables, no slot) === */
+  potion_strength:  { id: "potion_strength",  name: "Potion of Strength",  type: "potion" },
+  potion_swiftness: { id: "potion_swiftness", name: "Potion of Swiftness", type: "potion" },
+  potion_fortitude: { id: "potion_fortitude", name: "Potion of Fortitude", type: "potion" },
+  potion_aegis:     { id: "potion_aegis",     name: "Potion of Aegis",     type: "potion" }
 };
 
 const itemImages = {};
@@ -300,7 +312,13 @@ const itemImageFiles = {
   mount_bull:    "icons/mount_bull.png",
   mount_horse:   "icons/mount_horse.png",
   chariot_normal:"icons/chariot_normal.png",
-  chariot_helios:"icons/chariot_helios.png"
+  chariot_helios:"icons/chariot_helios.png",
+
+  /* Potion icons (optional PNGs; fallback colors below) */
+  potion_strength:  "icons/potion_strength.png",
+  potion_swiftness: "icons/potion_swiftness.png",
+  potion_fortitude: "icons/potion_fortitude.png",
+  potion_aegis:     "icons/potion_aegis.png"
 };
 
 for (const id in itemImageFiles) {
@@ -448,7 +466,7 @@ let specialCooldown = 0;
 let allies = []; // each ally has type + behavior
 
 /* =========================================================
-   Weapon drop system
+   Weapon drop system (now includes potions)
    ========================================================= */
 let weaponDrops = [];
 
@@ -473,7 +491,13 @@ const weaponDropChances = {
   mount_bull: 15,
   mount_horse: 20,
   chariot_normal: 12,
-  chariot_helios: 8
+  chariot_helios: 8,
+
+  /* Potions drop chances */
+  potion_strength:  35,
+  potion_swiftness: 35,
+  potion_fortitude: 30,
+  potion_aegis:     25
 };
 
 function getRandomWeaponToDrop() {
@@ -499,7 +523,11 @@ function getRandomWeaponToDrop() {
     "mount_bull",
     "mount_horse",
     "chariot_normal",
-    "chariot_helios"
+    "chariot_helios",
+    "potion_strength",
+    "potion_swiftness",
+    "potion_fortitude",
+    "potion_aegis"
   ]) {
     if (w === "helmet") {
       if (!gearOwned.helmet) candidates.push(w);
@@ -521,6 +549,14 @@ function getRandomWeaponToDrop() {
     ) {
       const already = inventory.some(it => it && it.id === w);
       if (!already) candidates.push(w);
+    } else if (
+      w === "potion_strength" ||
+      w === "potion_swiftness" ||
+      w === "potion_fortitude" ||
+      w === "potion_aegis"
+    ) {
+      // Potions are consumables: always allowed to drop
+      candidates.push(w);
     } else {
       if (!weaponsOwned[w]) candidates.push(w);
     }
@@ -914,6 +950,31 @@ function useTimeFreezeCharm() {
 }
 
 /* =========================================================
+   Potion usage (click in inventory)
+   ========================================================= */
+function usePotion(id) {
+  if (gameState !== "inventory") return;
+
+  if (id === "potion_strength") {
+    potionDamageMultiplier = 1.3;
+    toast("You drink a Potion of Strength! Damage up for this level.");
+  } else if (id === "potion_swiftness") {
+    potionSpeedMultiplier = 1.25;
+    potionJumpMultiplier = 1.1;
+    applyEquipmentEffects();
+    toast("You drink a Potion of Swiftness! Speed up for this level.");
+  } else if (id === "potion_fortitude") {
+    player.maxHp = Math.round(player.maxHp * 1.3);
+    player.hp = player.maxHp;
+    updateHPHUD();
+    toast("You drink a Potion of Fortitude! Max HP up for this level.");
+  } else if (id === "potion_aegis") {
+    potionAegisActive = true;
+    toast("You drink a Potion of Aegis! One hit will be negated this level.");
+  }
+}
+
+/* =========================================================
    Controls
    ========================================================= */
 addEventListener("keydown", e => {
@@ -924,6 +985,18 @@ addEventListener("keydown", e => {
   if (e.key === "F1") setDifficulty("easy");
   if (e.key === "F2") setDifficulty("medium");
   if (e.key === "F3") setDifficulty("hard");
+
+  // P + I: grant all potions to inventory
+  if ((k === "p" && keys["i"]) || (k === "i" && keys["p"])) {
+    const potionIds = [
+      "potion_strength",
+      "potion_swiftness",
+      "potion_fortitude",
+      "potion_aegis"
+    ];
+    potionIds.forEach(id => addItemToInventory(id));
+    toast("All potions added to your inventory.");
+  }
 
   if (gameState === "inventory") {
     if (k === "i") closeInventory();
@@ -1158,7 +1231,6 @@ function updateProjectiles(dt) {
       boss.hp -= p.damage;
       toast("Projectile hit " + boss.name + "!");
       projectiles.splice(i, 1);
-
       if (boss.hp <= 0) {
         toast(boss.name + " defeated!");
         lastBossBeaten = currentLevel;
@@ -1414,6 +1486,12 @@ function drawItemIcon(id, x, y, size) {
     case "mount_horse": ctx.fillStyle = "#cc9966"; break;
     case "chariot_normal": ctx.fillStyle = "#999999"; break;
     case "chariot_helios": ctx.fillStyle = "#ffdd55"; break;
+
+    case "potion_strength":  ctx.fillStyle = "#ff4444"; break;
+    case "potion_swiftness": ctx.fillStyle = "#44bbff"; break;
+    case "potion_fortitude": ctx.fillStyle = "#66ff66"; break;
+    case "potion_aegis":     ctx.fillStyle = "#ddddff"; break;
+
     default: ctx.fillStyle = "#cccccc"; break;
   }
   ctx.fillRect(x, y, size, size);
@@ -1732,6 +1810,53 @@ canvas.addEventListener("mouseup", e => {
 });
 
 /* =========================================================
+   Inventory click-to-use for potions
+   ========================================================= */
+canvas.addEventListener("click", e => {
+  if (gameState !== "inventory") return;
+
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+  const invX = invUI.x + invUI.padding;
+  const invY = invUI.y + invUI.padding + 20;
+  const gridInvY = invY + 80;
+  const INVENTORY_AREA_WIDTH = 320;
+  const visibleHeight = invUI.h - (invUI.padding + 80 + 24);
+
+  // Only inside inventory grid area
+  if (mx < invX || mx > invX + INVENTORY_AREA_WIDTH) return;
+  if (my < gridInvY || my > gridInvY + visibleHeight) return;
+
+  for (let row = 0; row < INVENTORY_ROWS; row++) {
+    for (let col = 0; col < INVENTORY_COLS; col++) {
+      const idx = row * INVENTORY_COLS + col;
+      const cellX = invX + col * invUI.cellSize;
+      const cellY = gridInvY + row * invUI.cellSize - inventoryScroll;
+
+      if (cellY > gridInvY + visibleHeight || cellY + invUI.cellSize < gridInvY) continue;
+
+      if (
+        mx >= cellX &&
+        mx <= cellX + invUI.cellSize &&
+        my >= cellY &&
+        my <= cellY + invUI.cellSize
+      ) {
+        const item = inventory[idx];
+        if (!item) return;
+        const data = itemData[item.id];
+        if (data && data.type === "potion") {
+          usePotion(item.id);
+          inventory[idx] = null;
+        }
+        return;
+      }
+    }
+  }
+});
+
+/* =========================================================
    Equipment effects
    ========================================================= */
 function applyEquipmentEffects() {
@@ -1763,6 +1888,10 @@ function applyEquipmentEffects() {
   } else if (equipment.chariot === "chariot_helios") {
     player.speed *= 1.6;
   }
+
+  // Apply potion movement buffs
+  player.speed *= potionSpeedMultiplier;
+  player.jump *= potionJumpMultiplier;
 }
 
 /* =========================================================
@@ -1786,7 +1915,6 @@ function drawAllies() {
     if (img && img.complete && img.naturalWidth > 0) {
       ctx.drawImage(img, a.x, a.y, a.w, a.h);
     } else {
-      // Fallback colored rectangles if image missing
       if (a.type === "hector") ctx.fillStyle = "#66ff66";
       else if (a.type === "paris") ctx.fillStyle = "#66aaff";
       else if (a.type === "priam") ctx.fillStyle = "#ffcc66";
@@ -1953,7 +2081,6 @@ let groundSpawnTimer = 0;
 let fallingSpawnTimer = 0;
 
 function spawnGroundObstacle() {
-  // Make sea flotsam bigger so they actually hit the player
   if (atSea) {
     groundObstacles.push({
       x: W + 40,
@@ -2003,6 +2130,12 @@ function startLevel(n) {
   finalVictory = false;
   atSea = (n >= 31 && n <= 35);
 
+  // Potions reset at the start of each level
+  potionDamageMultiplier = 1;
+  potionSpeedMultiplier = 1;
+  potionJumpMultiplier = 1;
+  potionAegisActive = false;
+
   if (n !== 0 && helmetCooldownRounds > 0) {
     helmetCooldownRounds = Math.max(helmetCooldownRounds - 1, 0);
   }
@@ -2031,6 +2164,7 @@ function startLevel(n) {
   player.rollCooldown = 0;
   player.rollDir = 0;
   player.h = 32;
+  player.maxHp = 100;
   player.hp = player.maxHp;
   updateHPHUD();
 
@@ -2094,6 +2228,14 @@ function applyBossCollisionDamage() {
         return;
       }
 
+      // Aegis potion: one free hit
+      if (potionAegisActive) {
+        potionAegisActive = false;
+        damageCooldown = 0.4;
+        toast("Your Aegis potion negates the blow!");
+        return;
+      }
+
       const dmg = scaleEnemyDamage(15);
 
       if (shieldActive) {
@@ -2137,6 +2279,13 @@ function applyShipCollisionDamage(ship) {
         return;
       }
 
+      if (potionAegisActive) {
+        potionAegisActive = false;
+        damageCooldown = 0.4;
+        toast("Your Aegis potion negates the ram!");
+        return;
+      }
+
       const dmg = scaleEnemyDamage(15);
 
       if (shieldActive) {
@@ -2167,6 +2316,13 @@ function applyShipCollisionDamage(ship) {
    ========================================================= */
 function applyObstacleDamage(dmg, message) {
   if (damageCooldown <= 0 && !deathLock) {
+    if (potionAegisActive) {
+      potionAegisActive = false;
+      damageCooldown = 0.4;
+      toast("Your Aegis potion negates the hit!");
+      return;
+    }
+
     if (shieldActive) {
       shieldActive = false;
       equipment.shield = null;
@@ -2278,7 +2434,7 @@ function checkLevelProgress() {
 }
 
 /* =========================================================
-   Weapon drop pickup logic
+   Weapon drop pickup logic (now includes potions)
    ========================================================= */
 function updateWeaponDrops() {
   for (let i = weaponDrops.length - 1; i >= 0; i--) {
@@ -2318,6 +2474,14 @@ function updateWeaponDrops() {
           addItemToInventory(key);
           toast("You obtained the " + itemData[key].name + "!");
         }
+      } else if (
+        key === "potion_strength" ||
+        key === "potion_swiftness" ||
+        key === "potion_fortitude" ||
+        key === "potion_aegis"
+      ) {
+        addItemToInventory(key);
+        toast("You found a " + itemData[key].name + "!");
       } else {
         if (!weaponsOwned[key]) {
           weaponsOwned[key] = true;
@@ -2465,6 +2629,12 @@ function drawWeaponDrops() {
       case "mount_horse": ctx.fillStyle = "#cc9966"; break;
       case "chariot_normal": ctx.fillStyle = "#999999"; break;
       case "chariot_helios": ctx.fillStyle = "#ffdd55"; break;
+
+      case "potion_strength":  ctx.fillStyle = "#ff4444"; break;
+      case "potion_swiftness": ctx.fillStyle = "#44bbff"; break;
+      case "potion_fortitude": ctx.fillStyle = "#66ff66"; break;
+      case "potion_aegis":     ctx.fillStyle = "#ddddff"; break;
+
       default:           ctx.fillStyle = "#cccccc"; break;
     }
     ctx.fillRect(drop.x, drop.y, drop.w, drop.h);
@@ -2717,14 +2887,15 @@ function unlockAll() {
     "shield_item","helmet_invisibility","chaos_charm","blood_charm",
     "time_skip_charm","time_slow_charm","time_rewind_charm","time_freeze_charm",
     "mount_lion","mount_pegasus","mount_bull","mount_horse",
-    "chariot_normal","chariot_helios"
+    "chariot_normal","chariot_helios",
+    "potion_strength","potion_swiftness","potion_fortitude","potion_aegis"
   ];
 
   for (let i = 0; i < allIds.length; i++) {
     addItemToInventory(allIds[i]);
   }
 
-  toast("All weapons, mounts, chariots, and charms activated");
+  toast("All weapons, mounts, chariots, charms, and potions activated");
 }
 
 /* =========================================================
