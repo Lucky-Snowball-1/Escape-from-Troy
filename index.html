@@ -244,6 +244,23 @@ for (const name in bossImageSources) {
 }
 
 /* =========================================================
+   Enemy images (Greek soldiers)
+   ========================================================= */
+const enemyImageSources = {
+  foot:   "enemy_foot.png",
+  archer: "enemy_archer.png",
+  shield: "enemy_shield.png",
+  spear:  "enemy_spear.png"
+};
+
+const enemyImages = {};
+for (const key in enemyImageSources) {
+  const img = new Image();
+  img.src = enemyImageSources[key];
+  enemyImages[key] = img;
+}
+
+/* =========================================================
    Ally images
    ========================================================= */
 const allyImageSources = {
@@ -476,6 +493,129 @@ let specialCooldown = 0;
 let allies = []; // each ally has type + behavior
 
 /* =========================================================
+   Enemies (Greek soldiers)
+   ========================================================= */
+let enemies = []; // {type, x,y,w,h,vx,hp,attackTimer,stopRange}
+
+let trojanSpawnTimer = 0;
+
+function spawnEnemy(type, x, y) {
+  const base = {
+    type,
+    x,
+    y,
+    w: 24,
+    h: 32,
+    vx: 0,
+    hp: 3,
+    attackTimer: 0,
+    stopRange: 0
+  };
+
+  if (type === "foot") {
+    base.vx = -120;
+    base.hp = 3;
+  } else if (type === "archer") {
+    base.vx = -80;
+    base.hp = 2;
+    base.stopRange = 220;
+    base.attackTimer = 1 + Math.random();
+  } else if (type === "shield") {
+    base.vx = -90;
+    base.hp = 5;
+  } else if (type === "spear") {
+    base.vx = -100;
+    base.hp = 4;
+    base.stopRange = 80;
+  }
+
+  enemies.push(base);
+}
+
+function spawnCoreEnemiesForLevel() {
+  enemies = [];
+
+  if (atSea) return; // no ground soldiers on boats
+
+  // Base count scales with level
+  const baseCount = Math.min(6, 1 + Math.floor(currentLevel / 4));
+  for (let i = 0; i < baseCount; i++) {
+    const roll = Math.random();
+    let type = "foot";
+    if (roll < 0.2) type = "archer";
+    else if (roll < 0.4) type = "shield";
+    else if (roll < 0.6) type = "spear";
+
+    const offset = 80 * i;
+    spawnEnemy(type, W + 60 + offset, groundY - 32);
+  }
+
+  // Extra guards on boss levels
+  if (isBossLevel(currentLevel)) {
+    const guardCount = 3 + Math.floor(currentLevel / 10);
+    for (let i = 0; i < guardCount; i++) {
+      const guardType = (i % 4 === 0) ? "shield" :
+                        (i % 4 === 1) ? "spear" :
+                        (i % 4 === 2) ? "archer" : "foot";
+      spawnEnemy(guardType, W - 260 - i * 40, groundY - 32);
+    }
+  }
+}
+
+function updateEnemies(dt) {
+  const meleeFootDmg   = scaleEnemyDamage(6);
+  const meleeShieldDmg = scaleEnemyDamage(7);
+  const meleeSpearDmg  = scaleEnemyDamage(8);
+  const arrowDmg       = scaleEnemyDamage(5);
+
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+
+    // Movement / behavior
+    if (e.type === "archer") {
+      const distToPlayer = (e.x - (player.x + player.w));
+      if (distToPlayer > e.stopRange) {
+        e.x += e.vx * dt;
+      } else {
+        // hold position and shoot
+        e.attackTimer -= dt;
+        if (e.attackTimer <= 0) {
+          e.attackTimer = 1.6 + Math.random() * 0.6;
+          const px = e.x;
+          const py = e.y + e.h / 2;
+          spawnProjectile(px, py, -260, arrowDmg, "arrow", true);
+        }
+      }
+    } else if (e.type === "spear") {
+      const distToPlayer = (e.x - (player.x + player.w));
+      if (distToPlayer > e.stopRange) {
+        e.x += e.vx * dt;
+      } else {
+        // close enough to poke; collision will handle damage
+      }
+    } else {
+      // foot + shield: simple rushers
+      e.x += e.vx * dt;
+    }
+
+    // Remove if off-screen
+    if (e.x + e.w < -40) {
+      enemies.splice(i, 1);
+      continue;
+    }
+
+    // Melee collision with player
+    if (collides(player, e) && !helmetActive) {
+      let dmg = meleeFootDmg;
+      if (e.type === "shield") dmg = meleeShieldDmg;
+      if (e.type === "spear")  dmg = meleeSpearDmg;
+
+      applyObstacleDamage(dmg, "Struck by a Greek soldier!");
+    }
+  }
+}
+
+/* =========================================================
    Weapon drop system (now includes potions)
    ========================================================= */
 let weaponDrops = [];
@@ -680,6 +820,7 @@ function playerAttack() {
       h: player.h
     };
 
+    // Hit boss
     if (boss && collides(hitbox, boss)) {
       boss.hp -= dmg;
       toast("Hit " + boss.name + "!");
@@ -688,6 +829,27 @@ function playerAttack() {
         lastBossBeaten = currentLevel;
         maybeSpawnWeaponDropAt(boss.x + boss.w / 2, boss.y);
         boss = null;
+      }
+    }
+
+    // Hit enemies
+    for (let i = enemies.length - 1; i >= 0; i--) {
+      const e = enemies[i];
+      if (!collides(hitbox, e)) continue;
+
+      if (e.type === "shield") {
+        // Shield bearer blocks frontal hits if player is in front
+        const playerFront = player.x + player.w;
+        if (playerFront <= e.x + e.w && playerFront >= e.x) {
+          toast("Your strike glances off the shield!");
+          continue;
+        }
+      }
+
+      e.hp -= dmg;
+      if (e.hp <= 0) {
+        maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
+        enemies.splice(i, 1);
       }
     }
   }
@@ -705,7 +867,8 @@ function playerAttack() {
       vx: weapon.projectileSpeed,
       vy: 0,
       damage: dmg,
-      type: weapon.homing ? "artemisArrow" : "arrow"
+      type: weapon.homing ? "artemisArrow" : "arrow",
+      fromEnemy: false
     });
 
     toast(weapon.homing ? "Homing arrow fired!" : "Arrow loosed!");
@@ -754,6 +917,7 @@ function specialMelee() {
     h: player.h
   };
 
+  // Boss
   if (boss && collides(hitbox, boss)) {
     boss.hp -= dmg;
     toast("Critical hit on " + boss.name + "!");
@@ -765,6 +929,27 @@ function specialMelee() {
     }
   }
 
+  // Enemies
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    if (!collides(hitbox, e)) continue;
+
+    if (e.type === "shield") {
+      const playerFront = player.x + player.w;
+      if (playerFront <= e.x + e.w && playerFront >= e.x) {
+        toast("Your mighty blow is blocked!");
+        continue;
+      }
+    }
+
+    e.hp -= dmg;
+    if (e.hp <= 0) {
+      maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
+      enemies.splice(i, 1);
+    }
+  }
+
+  // Greek ships (final)
   if (currentLevel === 35 && greekShips.length > 0) {
     for (let i = greekShips.length - 1; i >= 0; i--) {
       const ship = greekShips[i];
@@ -774,6 +959,7 @@ function specialMelee() {
         w: ship.w,
         h: ship.h
       };
+
       if (collides(hitbox, shipBox)) {
         ship.hp -= dmg;
         toast("Massive hit on Greek ship!");
@@ -802,16 +988,16 @@ function specialThrow() {
   const py = player.y + player.h / 2;
 
   if (currentWeapon === "spear" && weaponsOwned.spear) {
-    spawnProjectile(px, py, weapons.spear.throwSpeed, dmg, "spear");
+    spawnProjectile(px, py, weapons.spear.throwSpeed, dmg, "spear", false);
     toast("Spear thrown!");
   } else if (currentWeapon === "trident" && weaponsOwned.trident) {
-    spawnProjectile(px, py, weapons.trident.throwSpeed, dmg, "trident");
+    spawnProjectile(px, py, weapons.trident.throwSpeed, dmg, "trident", false);
     toast("Trident hurled!");
   } else if (currentWeapon === "lightning" && weaponsOwned.lightning) {
-    spawnProjectile(px, py, weapons.lightning.throwSpeed, dmg, "lightning");
+    spawnProjectile(px, py, weapons.lightning.throwSpeed, dmg, "lightning", false);
     toast("Lightning bolt thrown!");
   } else if (currentWeapon === "torch" && weaponsOwned.torch) {
-    spawnProjectile(px, py, weapons.torch.throwSpeed, dmg, "flame");
+    spawnProjectile(px, py, weapons.torch.throwSpeed, dmg, "flame", false);
     toast("Flame hurled!");
   } else if (currentWeapon === "artemisBow" && weaponsOwned.artemisBow) {
     projectiles.push({
@@ -822,11 +1008,12 @@ function specialThrow() {
       vx: weapons.artemisBow.projectileSpeed,
       vy: 0,
       damage: dmg,
-      type: "artemisArrow"
+      type: "artemisArrow",
+      fromEnemy: false
     });
     toast("Homing arrow hurled!");
   } else if (weaponsOwned.bow) {
-    spawnProjectile(px, py, weapons.bow.projectileSpeed, dmg, "arrow");
+    spawnProjectile(px, py, weapons.bow.projectileSpeed, dmg, "arrow", false);
     toast("Arrow loosed!");
   }
 }
@@ -860,7 +1047,7 @@ function specialUltimate() {
 /* =========================================================
    Projectile spawner
    ========================================================= */
-function spawnProjectile(x, y, speed, damage, type) {
+function spawnProjectile(x, y, speed, damage, type, fromEnemy = false) {
   projectiles.push({
     x,
     y,
@@ -869,7 +1056,8 @@ function spawnProjectile(x, y, speed, damage, type) {
     vx: speed,
     vy: 0,
     damage,
-    type
+    type,
+    fromEnemy
   });
 }
 
@@ -1223,7 +1411,8 @@ function summonRainOfArrows(dmg) {
       vx: 0,
       vy: 500,
       damage: dmg,
-      type: "arrow"
+      type: "arrow",
+      fromEnemy: false
     });
   }
 
@@ -1231,24 +1420,37 @@ function summonRainOfArrows(dmg) {
 }
 
 /* =========================================================
-   Projectile update loop (boss + ships hit detection)
+   Projectile update loop (boss + ships + enemies hit detection)
    ========================================================= */
 function updateProjectiles(dt) {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const p = projectiles[i];
 
-    if (p.type === "artemisArrow") {
+    if (p.type === "artemisArrow" && !p.fromEnemy) {
       updateHomingArrow(p, dt);
     }
 
     p.x += p.vx * dt;
     if (p.vy !== undefined) p.y += p.vy * dt;
 
-    if (p.x > W || p.x + p.w < 0 || p.y > H) {
+    if (p.x > W || p.x + p.w < 0 || p.y > H || p.y + p.h < -40) {
       projectiles.splice(i, 1);
       continue;
     }
 
+    // Enemy projectiles -> hit player
+    if (p.fromEnemy) {
+      if (!helmetActive && collides(player, p)) {
+        const dmg = p.damage || scaleEnemyDamage(5);
+        applyObstacleDamage(dmg, "Hit by enemy arrow!");
+        projectiles.splice(i, 1);
+        continue;
+      }
+      // Enemy arrows do NOT hit boss or ships
+      continue;
+    }
+
+    // Player projectiles -> hit boss
     if (boss && collides(p, boss)) {
       boss.hp -= p.damage;
       toast("Projectile hit " + boss.name + "!");
@@ -1262,6 +1464,35 @@ function updateProjectiles(dt) {
       continue;
     }
 
+    // Player projectiles -> hit enemies
+    let hitEnemy = false;
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      const e = enemies[j];
+      if (!collides(p, e)) continue;
+
+      if (e.type === "shield") {
+        // If projectile comes from left (player side), shield can block
+        if (p.vx > 0 && p.x <= e.x + e.w && p.x >= e.x) {
+          toast("Arrow deflected by shield bearer!");
+          projectiles.splice(i, 1);
+          hitEnemy = true;
+          break;
+        }
+      }
+
+      e.hp -= p.damage;
+      projectiles.splice(i, 1);
+      hitEnemy = true;
+
+      if (e.hp <= 0) {
+        maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
+        enemies.splice(j, 1);
+      }
+      break;
+    }
+    if (hitEnemy) continue;
+
+    // Player projectiles -> Greek ships (final)
     if (currentLevel === 35 && greekShips.length > 0) {
       let hitShip = false;
       for (let j = greekShips.length - 1; j >= 0; j--) {
@@ -1319,6 +1550,7 @@ function updateWaves(dt) {
       h: wave.h
     };
 
+    // Boss
     if (boss && collides(hitbox, boss)) {
       boss.hp -= wave.damage;
       toast("Wave smashes " + boss.name + "!");
@@ -1330,6 +1562,18 @@ function updateWaves(dt) {
       }
     }
 
+    // Enemies
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      const e = enemies[j];
+      if (!collides(hitbox, e)) continue;
+      e.hp -= wave.damage;
+      if (e.hp <= 0) {
+        maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
+        enemies.splice(j, 1);
+      }
+    }
+
+    // Greek ships
     if (currentLevel === 35 && greekShips.length > 0) {
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
@@ -1377,6 +1621,7 @@ function updateLightning(dt) {
       h: strike.h
     };
 
+    // Boss
     if (boss && collides(box, boss)) {
       boss.hp -= strike.damage;
 
@@ -1388,6 +1633,18 @@ function updateLightning(dt) {
       }
     }
 
+    // Enemies
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      const e = enemies[j];
+      if (!collides(box, e)) continue;
+      e.hp -= strike.damage;
+      if (e.hp <= 0) {
+        maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
+        enemies.splice(j, 1);
+      }
+    }
+
+    // Greek ships
     if (currentLevel === 35 && greekShips.length > 0) {
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
@@ -1439,6 +1696,7 @@ function updateInfernos(dt) {
       return dx * dx + dy * dy <= r2;
     }
 
+    // Boss
     if (boss && inside(boss)) {
       boss.hp -= inf.damage;
 
@@ -1450,6 +1708,18 @@ function updateInfernos(dt) {
       }
     }
 
+    // Enemies
+    for (let j = enemies.length - 1; j >= 0; j--) {
+      const e = enemies[j];
+      if (!inside(e)) continue;
+      e.hp -= inf.damage;
+      if (e.hp <= 0) {
+        maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
+        enemies.splice(j, 1);
+      }
+    }
+
+    // Greek ships
     if (currentLevel === 35 && greekShips.length > 0) {
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
@@ -1508,7 +1778,6 @@ function drawItemIcon(id, x, y, size) {
     case "mount_horse": ctx.fillStyle = "#cc9966"; break;
     case "chariot_normal": ctx.fillStyle = "#999999"; break;
     case "chariot_helios": ctx.fillStyle = "#ffdd55"; break;
-
     case "potion_strength":  ctx.fillStyle = "#ff4444"; break;
     case "potion_swiftness": ctx.fillStyle = "#44bbff"; break;
     case "potion_fortitude": ctx.fillStyle = "#66ff66"; break;
@@ -1969,7 +2238,7 @@ function updateAllies(dt) {
         a.shootTimer = 1.2;
         const px = a.x + a.w;
         const py = a.y + a.h / 2;
-        spawnProjectile(px, py, 320, scalePlayerDamage(1), "arrow");
+        spawnProjectile(px, py, 320, scalePlayerDamage(1), "arrow", false);
       }
 
     } else if (a.type === "priam") {
@@ -2203,6 +2472,8 @@ function startLevel(n) {
   lightningStrikes = [];
   infernos = [];
   allies = [];
+  enemies = [];
+  trojanSpawnTimer = 0;
 
   damageCooldown = 0;
   deathLock = false;
@@ -2231,6 +2502,9 @@ function startLevel(n) {
   } else if (n >= 31 && n <= 34) {
     toast("Escape by sea! Avoid debris and arrows.");
   }
+
+  // Spawn Greek soldiers for this level
+  spawnCoreEnemiesForLevel();
 
   applyEquipmentEffects();
   updateEquipHUD();
@@ -2423,7 +2697,7 @@ function updateObstacles(dt) {
    ========================================================= */
 function checkLevelProgress() {
   if (isBossLevel(currentLevel) && !levelComplete) {
-    if (!boss && weaponDrops.length === 0) {
+    if (!boss && weaponDrops.length === 0 && enemies.length === 0) {
       levelComplete = true;
       toast("Boss defeated!");
       setTimeout(() => startLevel(currentLevel + 1), 1200);
@@ -2631,7 +2905,7 @@ function drawProjectiles() {
   projectiles.forEach(p => {
     if (p.type === "flame") ctx.fillStyle = "#ff8844";
     else if (p.type === "lightning") ctx.fillStyle = "#ffff55";
-    else if (p.type === "arrow") ctx.fillStyle = "#ffdd55";
+    else if (p.type === "arrow") ctx.fillStyle = p.fromEnemy ? "#ff6666" : "#ffdd55";
     else if (p.type === "artemisArrow") ctx.fillStyle = "#ddddff";
     else ctx.fillStyle = "#ffdd55";
 
@@ -2717,6 +2991,22 @@ function drawInfernos() {
   });
 }
 
+function drawEnemies() {
+  enemies.forEach(e => {
+    const img = enemyImages[e.type];
+    if (img && img.complete && img.naturalWidth > 0) {
+      ctx.drawImage(img, e.x, e.y, e.w, e.h);
+    } else {
+      if (e.type === "foot") ctx.fillStyle = "#ffcc99";
+      else if (e.type === "archer") ctx.fillStyle = "#99ccff";
+      else if (e.type === "shield") ctx.fillStyle = "#cccccc";
+      else if (e.type === "spear") ctx.fillStyle = "#ffe066";
+      else ctx.fillStyle = "#ffffff";
+      ctx.fillRect(e.x, e.y, e.w, e.h);
+    }
+  });
+}
+
 function drawLevelJumpWarning() {
   if (!levelJumpUsed) return;
   ctx.fillStyle = "yellow";
@@ -2761,6 +3051,7 @@ function draw() {
   drawWaves();
   drawLightningStrikes();
   drawInfernos();
+  drawEnemies();
   drawAllies();
   drawLevelJumpWarning();
   drawFinalVictory();
@@ -2828,10 +3119,25 @@ function update(now) {
     updateLightning(worldDt);
     updateInfernos(worldDt);
     updateObstacles(worldDt);
+    updateEnemies(worldDt);
     updateAllies(worldDt);
     updateWeaponDrops();
 
     applyBossCollisionDamage();
+
+    // Trojan Horse spawns soldiers periodically
+    if (boss && boss.name === "Trojan Horse") {
+      trojanSpawnTimer += worldDt;
+      if (trojanSpawnTimer > 3) {
+        trojanSpawnTimer = 0;
+        const spawnTypes = ["foot", "archer", "shield", "spear"];
+        for (let i = 0; i < 3; i++) {
+          const type = spawnTypes[Math.floor(Math.random() * spawnTypes.length)];
+          spawnEnemy(type, boss.x - 40 - i * 30, groundY - 32);
+        }
+        toast("The Trojan Horse disgorges Greek soldiers!");
+      }
+    }
 
     if (currentLevel === 35) {
       for (let i = greekShips.length - 1; i >= 0; i--) {
