@@ -107,7 +107,7 @@ let last = performance.now();
 let t = 0;
 
 let currentLevel = 0;
-let gameState = "playing"; // "playing" | "inventory" | "ended"
+let gameState = "title"; // "title" | "playing" | "inventory" | "ended"
 let levelJumpUsed = false;
 let damageCooldown = 0;
 let deathLock = false;
@@ -203,20 +203,30 @@ function updateHPHUD() {
 /* =========================================================
    Images
    ========================================================= */
+
+// Title screen image (full screen)
+const titleScreenImg = new Image();
+titleScreenImg.src = "titlescreen.png";  // <-- your title PNG
+
+// Player
 const aeneasImg = new Image();
 aeneasImg.src = "aeneas.png";
 
+// Boat
 const boatImg = new Image();
 boatImg.src = "boat.png";
 
+// Greek ship (final battle)
 const greekShipImg = new Image();
 greekShipImg.src = "greekship.png";
 
+// Wave (sea levels)
 const waveImg = new Image();
 let waveImgLoaded = false;
 waveImg.src = "wave.png";
 waveImg.onload = () => { waveImgLoaded = true; };
 
+// Boss images
 const bossImageSources = {
   "Menelaus": "menelaus.png",
   "Agamemnon": "agamemnon.png",
@@ -980,6 +990,18 @@ function usePotion(id) {
 addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   keys[k] = true;
+
+  /* ============================
+     TITLE SCREEN START (Step 2)
+     ============================ */
+  if (gameState === "title" && (e.key === "Enter" || e.key === " ")) {
+    gameState = "playing";
+    startLevel(0);
+    return;
+  }
+  /* ============================
+     END TITLE SCREEN BLOCK
+     ============================ */
 
   // Difficulty hotkeys
   if (e.key === "F1") setDifficulty("easy");
@@ -2496,6 +2518,18 @@ function updateWeaponDrops() {
 }
 
 /* =========================================================
+   Title Screen Drawing
+   ========================================================= */
+function drawTitleScreen() {
+  if (titleScreenImg.complete && titleScreenImg.naturalWidth > 0) {
+    ctx.drawImage(titleScreenImg, 0, 0, W, H);
+  } else {
+    ctx.fillStyle = "#000";
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+
+/* =========================================================
    Drawing
    ========================================================= */
 function drawBackground() {
@@ -2710,6 +2744,12 @@ function drawFinalVictory() {
 function draw() {
   ctx.clearRect(0, 0, W, H);
 
+  // === TITLE SCREEN CHECK (Step 2) ===
+  if (gameState === "title") {
+    drawTitleScreen();
+    return;
+  }
+
   drawBackground();
   drawBoat();
   drawPlayer();
@@ -2908,7 +2948,8 @@ function toast(msg) {
 /* =========================================================
    Init
    ========================================================= */
-startLevel(0);
+// Don't start a level yet—stay on title
+// startLevel(0);
 updateEquipHUD();
 updateHPHUD();
 requestAnimationFrame(update);
