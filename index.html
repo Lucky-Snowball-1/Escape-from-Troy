@@ -1,466 +1,193 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="utf-8" />
-  <title>Escape from Troy — Mythic Build</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="UTF-8">
+  <title>Escape From Troy</title>
   <style>
     body {
       margin: 0;
-      background: #1b1b2a;
-      color: #e8d7a1;
+      background: #000;
+      color: #fff;
       font-family: sans-serif;
+      overflow: hidden;
     }
     #hud {
-      display: flex;
-      justify-content: space-between;
-      padding: 10px;
-      background: #222;
-      color: #fff;
-      font-weight: bold;
-      align-items: center;
-      gap: 12px;
-    }
-    #canvas {
-      display: block;
-      margin: 0 auto;
-      border: 2px solid #444;
-      background: #0b0e1a;
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      font-size: 14px;
+      z-index: 10;
     }
     #msg {
-      text-align: center;
-      margin-top: 6px;
-      font-size: 1.1em;
-      font-weight: bold;
-      min-height: 24px;
+      position: absolute;
+      bottom: 8px;
+      left: 8px;
+      font-size: 16px;
+      z-index: 10;
     }
     #equipHUD {
-      text-align: center;
-      color: #fff;
-      margin-top: 4px;
-      font-weight: bold;
-      font-size: 0.95em;
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      font-size: 14px;
+      z-index: 10;
     }
-
-    /* HP bar */
-    #hpContainer {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    #hpBarOuter {
-      width: 160px;
-      height: 14px;
-      border: 1px solid #555;
-      background: #111;
-      box-sizing: border-box;
-    }
-    #hpBarInner {
-      height: 100%;
+    #shopOverlay {
+      position: absolute;
+      left: 0;
+      top: 0;
       width: 100%;
-      background: #00c853;
-      transition: none;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      z-index: 20;
+      color: #fff;
     }
-    #hpText {
-      min-width: 60px;
-      text-align: left;
-      font-size: 0.9em;
+    #shopOverlayInner {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      background: #222;
+      border: 2px solid #aaa;
+      padding: 16px;
+      width: 520px;
+      max-width: 90%;
+    }
+    #shopTitle {
+      font-size: 20px;
+      margin-bottom: 8px;
+    }
+    #shopGrid {
+      display: grid;
+      grid-template-columns: repeat(5, 80px);
+      grid-auto-rows: 80px;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .shopItem {
+      border: 1px solid #555;
+      position: relative;
+      cursor: pointer;
+      background: #111;
+    }
+    .shopItem span {
+      position: absolute;
+      bottom: 2px;
+      left: 2px;
+      right: 2px;
+      font-size: 11px;
+      text-align: center;
+    }
+    .shopCost {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      font-size: 11px;
+      background: rgba(0,0,0,0.6);
+      padding: 1px 3px;
+      border-radius: 3px;
+    }
+    #shopCloseBtn {
+      margin-top: 10px;
+      padding: 4px 10px;
+      background: #444;
+      border: 1px solid #888;
+      color: #fff;
+      cursor: pointer;
+    }
+    #questInfo {
+      margin-top: 8px;
+      font-size: 13px;
     }
   </style>
 </head>
 <body>
-  <div id="hud">
-    <div>Level: <span id="level">0</span>/35</div>
+<div id="hud">
+  Level: <span id="level">0</span> |
+  Time: <span id="time">0.0</span> |
+  HP: <span id="hp">100</span> |
+  Drachma: <span id="drachma">0</span>
+</div>
+<div id="equipHUD"></div>
+<div id="msg"></div>
 
-    <div id="hpContainer">
-      <span>HP:</span>
-      <span id="hpBarOuter">
-        <span id="hpBarInner"></span>
-      </span>
-      <span id="hpText">100 HP</span>
-    </div>
-
-    <div>Time: <span id="time">0.0</span>s</div>
-    <div>Difficulty: <span id="difficultyLabel">Medium</span></div>
+<div id="shopOverlay">
+  <div id="shopOverlayInner">
+    <div id="shopTitle">Shop</div>
+    <div id="questInfo" style="display:none;"></div>
+    <div id="shopGrid"></div>
+    <button id="shopCloseBtn">Close</button>
   </div>
+</div>
 
-  <canvas id="canvas" width="960" height="540"></canvas>
-  <div id="equipHUD">Weapon: None | Helmet: None | Shield: None | Charm: None | Mount: None | Chariot: None</div>
-  <div id="msg"></div>
+<canvas id="game" width="960" height="540"></canvas>
 
 <script>
-/* =========================================================
-   Core constants & global state
-   ========================================================= */
-const canvas = document.getElementById("canvas");
+const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-ctx.imageSmoothingEnabled = false;
+let W = canvas.width;
+let H = canvas.height;
 
-const W = canvas.width;
-const H = canvas.height;
-
-const groundY = H - 80;
-const seaY = H - 120;
-
-let keys = {};
-let last = performance.now();
 let t = 0;
+let last = performance.now();
 
-let currentLevel = 0;
-let gameState = "title"; // "title" | "playing" | "inventory" | "ended"
-let levelJumpUsed = false;
-let damageCooldown = 0;
-let deathLock = false;
-let lastBossBeaten = 0;
-let levelComplete = false;
+let gameState = "title"; // "title", "playing", "inventory", "troy", "ended"
+
 let atSea = false;
-let finalVictory = false;
+const groundY = 400;
+const seaY = 360;
 
-/* =========================================================
-   Difficulty & damage scaling
-   ========================================================= */
-const difficulties = {
-  easy:   { name: "Easy",   playerDamage: 1.2, enemyDamage: 0.7 },
-  medium: { name: "Medium", playerDamage: 1.0, enemyDamage: 1.0 },
-  hard:   { name: "Hard",   playerDamage: 0.8, enemyDamage: 1.3 }
-};
+const BASE_SPEED = 200;
+const BASE_JUMP = 420;
 
-let currentDifficulty = "medium";
-
-/* === Potion-level buffs (last one level) === */
-let potionDamageMultiplier = 1;
-let potionSpeedMultiplier = 1;
-let potionJumpMultiplier = 1;
-let potionAegisActive = false; // one free hit
-
-function setDifficulty(key) {
-  if (!difficulties[key]) return;
-  currentDifficulty = key;
-  const d = difficulties[key];
-  document.getElementById("difficultyLabel").textContent = d.name;
-  toast("Difficulty set to " + d.name);
-}
-
-function scalePlayerDamage(base) {
-  const d = difficulties[currentDifficulty] || difficulties.medium;
-  return base * d.playerDamage * potionDamageMultiplier;
-}
-
-function scaleEnemyDamage(base) {
-  const d = difficulties[currentDifficulty] || difficulties.medium;
-  return base * d.enemyDamage;
-}
-
-/* =========================================================
-   Player
-   ========================================================= */
-const BASE_SPEED = 230;
-const BASE_JUMP = 440;
-
-const player = {
+let player = {
   x: 40,
   y: groundY - 32,
-  w: 24,
+  w: 20,
   h: 32,
   vx: 0,
   vy: 0,
   speed: BASE_SPEED,
   jump: BASE_JUMP,
   onGround: true,
-
-  maxHp: 100,
-  hp: 100,
-
   isRolling: false,
   rollTimer: 0,
   rollCooldown: 0,
-  rollDir: 0
+  rollDir: 0,
+  maxHp: 100,
+  hp: 100
 };
 
-/* =========================================================
-   HP HUD helpers
-   ========================================================= */
-function updateHPHUD() {
-  const hpBarInner = document.getElementById("hpBarInner");
-  const hpText = document.getElementById("hpText");
-
-  const ratio = Math.max(0, Math.min(1, player.hp / player.maxHp));
-  const percent = Math.round(ratio * 100);
-
-  hpBarInner.style.width = (ratio * 100) + "%";
-
-  if (percent >= 70) {
-    hpBarInner.style.background = "#00c853";
-  } else if (percent >= 30) {
-    hpBarInner.style.background = "#ffd600";
-  } else {
-    hpBarInner.style.background = "#d50000";
-  }
-
-  hpText.textContent = `${Math.max(0, Math.round(player.hp))} HP`;
-}
-
-/* =========================================================
-   Images
-   ========================================================= */
-
-// Title screen image (full screen)
-const titleScreenImg = new Image();
-titleScreenImg.src = "titlescreen.png";  // <-- your title PNG
-
-// Player
-const aeneasImg = new Image();
-aeneasImg.src = "aeneas.png";
-
-// Boat
-const boatImg = new Image();
-boatImg.src = "boat.png";
-
-// Greek ship (final battle)
-const greekShipImg = new Image();
-greekShipImg.src = "greekship.png";
-
-// Wave (sea levels)
-const waveImg = new Image();
-let waveImgLoaded = false;
-waveImg.src = "wave.png";
-waveImg.onload = () => { waveImgLoaded = true; };
-
-// Boss images
-const bossImageSources = {
-  "Menelaus": "menelaus.png",
-  "Agamemnon": "agamemnon.png",
-  "Diomedes": "diomedes.png",
-  "Ajax": "ajax.png",
-  "Achilles": "achilles.png",
-  "Trojan Horse": "trojanhorse.png"
-};
-
-const bossImages = {};
-for (const name in bossImageSources) {
-  const img = new Image();
-  img.src = bossImageSources[name];
-  bossImages[name] = img;
-}
-
-/* =========================================================
-   Enemy images (Greek soldiers)
-   ========================================================= */
-const enemyImageSources = {
-  foot:   "enemy_foot.png",
-  archer: "enemy_archer.png",
-  shield: "enemy_shield.png",
-  spear:  "enemy_spear.png"
-};
-
-const enemyImages = {};
-for (const key in enemyImageSources) {
-  const img = new Image();
-  img.src = enemyImageSources[key];
-  enemyImages[key] = img;
-}
-
-/* =========================================================
-   Ally images
-   ========================================================= */
-const allyImageSources = {
-  hector: "allies/hector.png",
-  paris:  "allies/paris.png",
-  priam:  "allies/priam.png",
-  helen:  "allies/helen.png"
-};
-
-const allyImages = {};
-for (const key in allyImageSources) {
-  const img = new Image();
-  img.src = allyImageSources[key];
-  allyImages[key] = img;
-}
-
-/* =========================================================
-   Item data, icons & inventory
-   ========================================================= */
-const itemData = {
-  sword:        { id: "sword",        name: "Sword",              type: "weapon", slot: "weapon" },
-  axe:          { id: "axe",          name: "Axe",                type: "weapon", slot: "weapon" },
-  bow:          { id: "bow",          name: "Bow",                type: "weapon", slot: "weapon" },
-  artemisBow:   { id: "artemisBow",   name: "Artemis's Bow",      type: "weapon", slot: "weapon" },
-  spear:        { id: "spear",        name: "Spear",              type: "weapon", slot: "weapon" },
-  trident:      { id: "trident",      name: "Trident",            type: "weapon", slot: "weapon" },
-  lightning:    { id: "lightning",    name: "Lightning Bolt",     type: "weapon", slot: "weapon" },
-  torch:        { id: "torch",        name: "Torch",              type: "weapon", slot: "weapon" },
-  shield_item:  { id: "shield_item",  name: "Shield",             type: "shield", slot: "shield" },
-  helmet_invisibility: { id: "helmet_invisibility", name: "Helmet of Invisibility", type: "helmet", slot: "helmet" },
-  chaos_charm:  { id: "chaos_charm",  name: "Chaos Charm",        type: "charm",  slot: "charm" },
-  blood_charm:  { id: "blood_charm",  name: "Blood Charm",        type: "charm",  slot: "charm" },
-
-  time_skip_charm:   { id: "time_skip_charm",   name: "Time Skip Charm",   type: "charm", slot: "charm" },
-  time_slow_charm:   { id: "time_slow_charm",   name: "Time Slow Charm",   type: "charm", slot: "charm" },
-  time_rewind_charm: { id: "time_rewind_charm", name: "Time Rewind Charm", type: "charm", slot: "charm" },
-  time_freeze_charm: { id: "time_freeze_charm", name: "Time Freeze Charm", type: "charm", slot: "charm" },
-
-  mount_lion:   { id: "mount_lion",   name: "Lion Mount",         type: "mount",   slot: "mount" },
-  mount_pegasus:{ id: "mount_pegasus",name: "Pegasus Mount",      type: "mount",   slot: "mount" },
-  mount_bull:   { id: "mount_bull",   name: "Bull Mount",         type: "mount",   slot: "mount" },
-  mount_horse:  { id: "mount_horse",  name: "Horse Mount",        type: "mount",   slot: "mount" },
-
-  chariot_normal: { id: "chariot_normal", name: "Chariot",        type: "chariot", slot: "chariot" },
-  chariot_helios: { id: "chariot_helios", name: "Helios Chariot", type: "chariot", slot: "chariot" },
-
-  /* === Potions (consumables, no slot) === */
-  potion_strength:  { id: "potion_strength",  name: "Potion of Strength",  type: "potion" },
-  potion_swiftness: { id: "potion_swiftness", name: "Potion of Swiftness", type: "potion" },
-  potion_fortitude: { id: "potion_fortitude", name: "Potion of Fortitude", type: "potion" },
-  potion_aegis:     { id: "potion_aegis",     name: "Potion of Aegis",     type: "potion" }
-};
-
-const itemImages = {};
-const itemImageFiles = {
-  helmet_invisibility: "icons/helmet.png",
-  sword: "icons/sword.png",
-  axe: "icons/axe.png",
-  bow: "icons/bow.png",
-  artemisBow: "icons/artemisbow.png",
-  spear: "icons/spear.png",
-  trident: "icons/trident.png",
-  lightning: "icons/lightning.png",
-  torch: "icons/torch.png",
-  shield_item: "icons/shield.png",
-  chaos_charm: "icons/chaos.png",
-  blood_charm: "icons/blood.png",
-
-  time_skip_charm:   "icons/time_skip.png",
-  time_slow_charm:   "icons/time_slow.png",
-  time_rewind_charm: "icons/time_rewind.png",
-  time_freeze_charm: "icons/time_freeze.png",
-
-  mount_lion:    "icons/mount_lion.png",
-  mount_pegasus: "icons/mount_pegasus.png",
-  mount_bull:    "icons/mount_bull.png",
-  mount_horse:   "icons/mount_horse.png",
-  chariot_normal:"icons/chariot_normal.png",
-  chariot_helios:"icons/chariot_helios.png",
-
-  /* Potion icons (optional PNGs; fallback colors below) */
-  potion_strength:  "icons/potion_strength.png",
-  potion_swiftness: "icons/potion_swiftness.png",
-  potion_fortitude: "icons/potion_fortitude.png",
-  potion_aegis:     "icons/potion_aegis.png"
-};
-
-for (const id in itemImageFiles) {
-  const img = new Image();
-  img.src = itemImageFiles[id];
-  itemImages[id] = img;
-}
-
-// Inventory grid: 4 columns x 25 rows = 100 slots
-const inventory = []; // {id}
-const INVENTORY_COLS = 4;
-const INVENTORY_ROWS = 25;
-
-// Equipment slots
-const equipment = {
-  weapon: null,
-  helmet: null,
-  shield: null,
-  charm: null,
-  mount: null,
-  chariot: null
-};
-
-// Inventory UI layout
-const invUI = {
-  x: W / 2 - 260,
-  y: H / 2 - 160,
-  w: 520,
-  h: 320,
-  cellSize: 56,
-  padding: 16
-};
-
-// Scroll state for inventory
-let inventoryScroll = 0;
-let maxInventoryScroll = 0;
-
-// Drag state
-let draggingItem = null;
-let dragOffsetX = 0;
-let dragOffsetY = 0;
+let keys = {};
 let mouseX = 0;
 let mouseY = 0;
 
-/* =========================================================
-   Weapons, gear & combat
-   ========================================================= */
-const weapons = {
-  sword: {
-    type: "melee",
-    name: "Sword",
-    damage: 1,
-    range: 30
-  },
-  axe: {
-    type: "melee",
-    name: "Axe",
-    damage: 2,
-    range: 35
-  },
-  bow: {
-    type: "projectile",
-    name: "Bow",
-    damage: 1,
-    projectileSpeed: 400
-  },
-  artemisBow: {
-    type: "projectile",
-    name: "Artemis's Bow",
-    damage: 2,
-    projectileSpeed: 520,
-    homing: true,
-    rainArrows: 7,
-    rainSpread: 260,
-    rainFallSpeed: 500
-  },
-  spear: {
-    type: "hybrid",
-    name: "Spear",
-    meleeDamage: 1,
-    meleeRange: 60,
-    throwDamage: 1,
-    throwSpeed: 350
-  },
-  trident: {
-    type: "hybrid",
-    name: "Trident",
-    meleeDamage: 2,
-    meleeRange: 50,
-    throwDamage: 2,
-    throwSpeed: 300,
-    waveDamageMultiplier: 3
-  },
-  lightning: {
-    type: "hybrid",
-    name: "Lightning Bolt",
-    meleeDamage: 2,
-    meleeRange: 40,
-    throwDamage: 3,
-    throwSpeed: 500,
-    stormDamage: 3
-  },
-  torch: {
-    type: "hybrid",
-    name: "Torch",
-    meleeDamage: 1,
-    meleeRange: 35,
-    throwDamage: 2,
-    throwSpeed: 380,
-    burnDamage: 1
-  }
-};
+let damageCooldown = 0;
+let deathLock = false;
+let levelComplete = false;
+let finalVictory = false;
+
+let specialCooldown = 0;
+
+let projectiles = [];
+let weaponDrops = [];
+let waves = [];
+let lightningStrikes = [];
+let infernos = [];
+let enemies = [];
+let allies = [];
+let greekShips = [];
+let boat = null;
+
+let trojanSpawnTimer = 0;
+
+let shieldActive = false;
+let helmetActive = false;
+let helmetCooldownRounds = 0;
 
 let weaponsOwned = {
-  sword: true,
+  sword: false,
   axe: false,
   bow: false,
   artemisBow: false,
@@ -471,279 +198,309 @@ let weaponsOwned = {
   torch: false
 };
 
-// Gear
 let gearOwned = {
   helmet: false
 };
 
-let currentWeapon = "sword";
-let shieldActive = false;
-let helmetActive = false;
-let helmetCooldownRounds = 0;
-
-let projectiles = [];
-let waves = [];
-let lightningStrikes = [];
-let infernos = [];
-let specialCooldown = 0;
-
-/* =========================================================
-   Allies
-   ========================================================= */
-let allies = []; // each ally has type + behavior
-
-/* =========================================================
-   Enemies (Greek soldiers)
-   ========================================================= */
-let enemies = []; // {type, x,y,w,h,vx,hp,attackTimer,stopRange}
-
-let trojanSpawnTimer = 0;
-
-function spawnEnemy(type, x, y) {
-  const base = {
-    type,
-    x,
-    y,
-    w: 24,
-    h: 32,
-    vx: 0,
-    hp: 3,
-    attackTimer: 0,
-    stopRange: 0
-  };
-
-  if (type === "foot") {
-    base.vx = -120;
-    base.hp = 3;
-  } else if (type === "archer") {
-    base.vx = -80;
-    base.hp = 2;
-    base.stopRange = 220;
-    base.attackTimer = 1 + Math.random();
-  } else if (type === "shield") {
-    base.vx = -90;
-    base.hp = 5;
-  } else if (type === "spear") {
-    base.vx = -100;
-    base.hp = 4;
-    base.stopRange = 80;
-  }
-
-  enemies.push(base);
-}
-
-function spawnCoreEnemiesForLevel() {
-  enemies = [];
-
-  if (atSea) return; // no ground soldiers on boats
-
-  // Base count scales with level
-  const baseCount = Math.min(6, 1 + Math.floor(currentLevel / 4));
-  for (let i = 0; i < baseCount; i++) {
-    const roll = Math.random();
-    let type = "foot";
-    if (roll < 0.2) type = "archer";
-    else if (roll < 0.4) type = "shield";
-    else if (roll < 0.6) type = "spear";
-
-    const offset = 80 * i;
-    spawnEnemy(type, W + 60 + offset, groundY - 32);
-  }
-
-  // Extra guards on boss levels
-  if (isBossLevel(currentLevel)) {
-    const guardCount = 3 + Math.floor(currentLevel / 10);
-    for (let i = 0; i < guardCount; i++) {
-      const guardType = (i % 4 === 0) ? "shield" :
-                        (i % 4 === 1) ? "spear" :
-                        (i % 4 === 2) ? "archer" : "foot";
-      spawnEnemy(guardType, W - 260 - i * 40, groundY - 32);
-    }
-  }
-}
-
-function updateEnemies(dt) {
-  const meleeFootDmg   = scaleEnemyDamage(6);
-  const meleeShieldDmg = scaleEnemyDamage(7);
-  const meleeSpearDmg  = scaleEnemyDamage(8);
-  const arrowDmg       = scaleEnemyDamage(5);
-
-  for (let i = enemies.length - 1; i >= 0; i--) {
-    const e = enemies[i];
-
-    // Movement / behavior
-    if (e.type === "archer") {
-      const distToPlayer = (e.x - (player.x + player.w));
-      if (distToPlayer > e.stopRange) {
-        e.x += e.vx * dt;
-      } else {
-        // hold position and shoot
-        e.attackTimer -= dt;
-        if (e.attackTimer <= 0) {
-          e.attackTimer = 1.6 + Math.random() * 0.6;
-          const px = e.x;
-          const py = e.y + e.h / 2;
-          spawnProjectile(px, py, -260, arrowDmg, "arrow", true);
-        }
-      }
-    } else if (e.type === "spear") {
-      const distToPlayer = (e.x - (player.x + player.w));
-      if (distToPlayer > e.stopRange) {
-        e.x += e.vx * dt;
-      } else {
-        // close enough to poke; collision will handle damage
-      }
-    } else {
-      // foot + shield: simple rushers
-      e.x += e.vx * dt;
-    }
-
-    // Remove if off-screen
-    if (e.x + e.w < -40) {
-      enemies.splice(i, 1);
-      continue;
-    }
-
-    // Melee collision with player
-    if (collides(player, e) && !helmetActive) {
-      let dmg = meleeFootDmg;
-      if (e.type === "shield") dmg = meleeShieldDmg;
-      if (e.type === "spear")  dmg = meleeSpearDmg;
-
-      applyObstacleDamage(dmg, "Struck by a Greek soldier!");
-    }
-  }
-}
-
-/* =========================================================
-   Weapon drop system (now includes potions)
-   ========================================================= */
-let weaponDrops = [];
-
-const weaponDropChances = {
-  bow: 80,
-  artemisBow: 35,
-  shield: 70,
-  axe: 60,
-  spear: 50,
-  trident: 40,
-  lightning: 40,
-  torch: 40,
-  helmet: 40,
-  chaos_charm: 30,
-  blood_charm: 30,
-  time_skip_charm: 25,
-  time_slow_charm: 25,
-  time_rewind_charm: 25,
-  time_freeze_charm: 25,
-  mount_lion: 15,
-  mount_pegasus: 10,
-  mount_bull: 15,
-  mount_horse: 20,
-  chariot_normal: 12,
-  chariot_helios: 8,
-
-  /* Potions drop chances */
-  potion_strength:  35,
-  potion_swiftness: 35,
-  potion_fortitude: 30,
-  potion_aegis:     25
+let equipment = {
+  weapon: null,
+  helmet: null,
+  shield: null,
+  charm: null,
+  mount: null,
+  chariot: null
 };
 
-function getRandomWeaponToDrop() {
-  const candidates = [];
-  for (const w of [
-    "bow",
-    "artemisBow",
-    "shield",
-    "axe",
-    "spear",
-    "trident",
-    "lightning",
-    "torch",
-    "helmet",
-    "chaos_charm",
-    "blood_charm",
-    "time_skip_charm",
-    "time_slow_charm",
-    "time_rewind_charm",
-    "time_freeze_charm",
-    "mount_lion",
-    "mount_pegasus",
-    "mount_bull",
-    "mount_horse",
-    "chariot_normal",
-    "chariot_helios",
-    "potion_strength",
-    "potion_swiftness",
-    "potion_fortitude",
-    "potion_aegis"
-  ]) {
-    if (w === "helmet") {
-      if (!gearOwned.helmet) candidates.push(w);
-    } else if (w === "artemisBow") {
-      if (!weaponsOwned.artemisBow) candidates.push(w);
-    } else if (
-      w === "chaos_charm" ||
-      w === "blood_charm" ||
-      w === "time_skip_charm" ||
-      w === "time_slow_charm" ||
-      w === "time_rewind_charm" ||
-      w === "time_freeze_charm" ||
-      w === "mount_lion" ||
-      w === "mount_pegasus" ||
-      w === "mount_bull" ||
-      w === "mount_horse" ||
-      w === "chariot_normal" ||
-      w === "chariot_helios"
-    ) {
-      const already = inventory.some(it => it && it.id === w);
-      if (!already) candidates.push(w);
-    } else if (
-      w === "potion_strength" ||
-      w === "potion_swiftness" ||
-      w === "potion_fortitude" ||
-      w === "potion_aegis"
-    ) {
-      // Potions are consumables: always allowed to drop
-      candidates.push(w);
-    } else {
-      if (!weaponsOwned[w]) candidates.push(w);
-    }
-  }
-  if (candidates.length === 0) return null;
+let currentWeapon = "sword";
 
-  for (const w of candidates) {
-    const chance = weaponDropChances[w] || 0;
-    if (Math.random() * 100 < chance) {
-      return w;
-    }
-  }
-  return null;
+let potionDamageMultiplier = 1;
+let potionSpeedMultiplier = 1;
+let potionJumpMultiplier = 1;
+let potionAegisActive = false;
+
+let timeSlowActive = false;
+let timeSlowTimer = 0;
+let timeFreezeActive = false;
+let timeFreezeTimer = 0;
+let lastTimeCharmUseLevel = -999;
+
+let inventory = [];
+const INVENTORY_ROWS = 6;
+const INVENTORY_COLS = 8;
+
+let invUI = {
+  x: 80,
+  y: 40,
+  w: 800,
+  h: 440,
+  padding: 20,
+  cellSize: 56
+};
+
+let inventoryScroll = 0;
+let maxInventoryScroll = 0;
+
+let draggingItem = null;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+let itemImages = {};
+// === ITEM ICONS ===
+itemImages["sword"] = new Image();
+itemImages["sword"].src = "icons/sword.png";
+
+itemImages["axe"] = new Image();
+itemImages["axe"].src = "icons/axe.png";
+
+itemImages["bow"] = new Image();
+itemImages["bow"].src = "icons/bow.png";
+
+itemImages["artemisBow"] = new Image();
+itemImages["artemisBow"].src = "icons/artemis_bow.png";
+
+itemImages["spear"] = new Image();
+itemImages["spear"].src = "icons/spear.png";
+
+itemImages["trident"] = new Image();
+itemImages["trident"].src = "icons/trident.png";
+
+itemImages["lightning"] = new Image();
+itemImages["lightning"].src = "icons/lightning.png";
+
+itemImages["torch"] = new Image();
+itemImages["torch"].src = "icons/torch.png";
+
+itemImages["shield_item"] = new Image();
+itemImages["shield_item"].src = "icons/shield.png";
+
+itemImages["helmet_invisibility"] = new Image();
+itemImages["helmet_invisibility"].src = "icons/helmet.png";
+
+itemImages["chaos_charm"] = new Image();
+itemImages["chaos_charm"].src = "icons/chaos_charm.png";
+
+itemImages["blood_charm"] = new Image();
+itemImages["blood_charm"].src = "icons/blood_charm.png";
+
+itemImages["time_skip_charm"] = new Image();
+itemImages["time_skip_charm"].src = "icons/time_skip.png";
+
+itemImages["time_slow_charm"] = new Image();
+itemImages["time_slow_charm"].src = "icons/time_slow.png";
+
+itemImages["time_rewind_charm"] = new Image();
+itemImages["time_rewind_charm"].src = "icons/time_rewind.png";
+
+itemImages["time_freeze_charm"] = new Image();
+itemImages["time_freeze_charm"].src = "icons/time_freeze.png";
+
+itemImages["mount_lion"] = new Image();
+itemImages["mount_lion"].src = "icons/lion.png";
+
+itemImages["mount_pegasus"] = new Image();
+itemImages["mount_pegasus"].src = "icons/pegasus.png";
+
+itemImages["mount_bull"] = new Image();
+itemImages["mount_bull"].src = "icons/bull.png";
+
+itemImages["mount_horse"] = new Image();
+itemImages["mount_horse"].src = "icons/horse.png";
+
+itemImages["chariot_normal"] = new Image();
+itemImages["chariot_normal"].src = "icons/chariot.png";
+
+itemImages["chariot_helios"] = new Image();
+itemImages["chariot_helios"].src = "icons/chariot_helios.png";
+
+itemImages["potion_strength"] = new Image();
+itemImages["potion_strength"].src = "icons/potion_strength.png";
+
+itemImages["potion_swiftness"] = new Image();
+itemImages["potion_swiftness"].src = "icons/potion_swiftness.png";
+
+itemImages["potion_fortitude"] = new Image();
+itemImages["potion_fortitude"].src = "icons/potion_fortitude.png";
+
+itemImages["potion_aegis"] = new Image();
+itemImages["potion_aegis"].src = "icons/potion_aegis.png";
+
+let allyImages = {};
+
+// === ALLY IMAGES ===
+allyImages["hector"] = new Image();
+allyImages["hector"].src = "allies/hector.png";
+
+allyImages["paris"] = new Image();
+allyImages["paris"].src = "allies/paris.png";
+
+allyImages["priam"] = new Image();
+allyImages["priam"].src = "allies/priam.png";
+
+allyImages["helen"] = new Image();
+allyImages["helen"].src = "allies/helen.png";
+
+let enemyImages = {};
+
+// === ENEMY SOLDIER IMAGES ===
+enemyImages["foot"] = new Image();
+enemyImages["foot"].src = "enemies/foot.png";
+
+enemyImages["spear"] = new Image();
+enemyImages["spear"].src = "enemies/spear.png";
+
+enemyImages["shield"] = new Image();
+enemyImages["shield"].src = "enemies/shield.png";
+
+enemyImages["archer"] = new Image();
+enemyImages["archer"].src = "enemies/archer.png";
+
+let bossImages = {};
+
+// === BOSS IMAGES ===
+bossImages["Menelaus"] = new Image();
+bossImages["Menelaus"].src = "bosses/menelaus.png";
+
+bossImages["Agamemnon"] = new Image();
+bossImages["Agamemnon"].src = "bosses/agamemnon.png";
+
+bossImages["Diomedes"] = new Image();
+bossImages["Diomedes"].src = "bosses/diomedes.png";
+
+bossImages["Ajax"] = new Image();
+bossImages["Ajax"].src = "bosses/ajax.png";
+
+bossImages["Achilles"] = new Image();
+bossImages["Achilles"].src = "bosses/achilles.png";
+
+bossImages["Trojan Horse"] = new Image();
+bossImages["Trojan Horse"].src = "bosses/trojan_horse.png";
+
+// === TROY BUILDING IMAGES ===
+let troyBuildingImages = {};
+
+troyBuildingImages["shop"] = new Image();
+troyBuildingImages["shop"].src = "troy/shop.png";
+
+troyBuildingImages["blacksmith"] = new Image();
+troyBuildingImages["blacksmith"].src = "troy/blacksmith.png";
+
+troyBuildingImages["stables"] = new Image();
+troyBuildingImages["stables"].src = "troy/stables.png";
+
+troyBuildingImages["temple"] = new Image();
+troyBuildingImages["temple"].src = "troy/temple.png";
+
+troyBuildingImages["searchers_lounge"] = new Image();
+troyBuildingImages["searchers_lounge"].src = "troy/searchers_lounge.png";
+
+let titleScreenImg = new Image();
+let boatImg = new Image();
+let aeneasImg = new Image();
+let greekShipImg = new Image();
+let waveImg = new Image();
+let waveImgLoaded = false;
+
+titleScreenImg.src = "title.png";
+boatImg.src = "boat.png";
+aeneasImg.src = "aeneas.png";
+greekShipImg.src = "greek_ship.png";
+waveImg.src = "wave.png";
+waveImg.onload = () => waveImgLoaded = true;
+
+let itemData = {
+  sword: { name: "Sword", type: "weapon", slot: "weapon", baseDamage: 5 },
+  axe: { name: "Axe", type: "weapon", slot: "weapon", baseDamage: 6 },
+  bow: { name: "Bow", type: "weapon", slot: "weapon", baseDamage: 4 },
+  artemisBow: { name: "Artemis Bow", type: "weapon", slot: "weapon", baseDamage: 5 },
+  spear: { name: "Spear", type: "weapon", slot: "weapon", baseDamage: 6 },
+  trident: { name: "Trident", type: "weapon", slot: "weapon", baseDamage: 7 },
+  lightning: { name: "Lightning Bolt", type: "weapon", slot: "weapon", baseDamage: 7 },
+  torch: { name: "Torch", type: "weapon", slot: "weapon", baseDamage: 5 },
+  shield_item: { name: "Shield", type: "shield", slot: "shield" },
+  helmet_invisibility: { name: "Helmet of Invisibility", type: "helmet", slot: "helmet" },
+  chaos_charm: { name: "Chaos Charm", type: "charm", slot: "charm" },
+  blood_charm: { name: "Blood Charm", type: "charm", slot: "charm" },
+  time_skip_charm: { name: "Time Skip Charm", type: "charm", slot: "charm" },
+  time_slow_charm: { name: "Time Slow Charm", type: "charm", slot: "charm" },
+  time_rewind_charm: { name: "Time Rewind Charm", type: "charm", slot: "charm" },
+  time_freeze_charm: { name: "Time Freeze Charm", type: "charm", slot: "charm" },
+  mount_lion: { name: "Lion Mount", type: "mount", slot: "mount" },
+  mount_pegasus: { name: "Pegasus Mount", type: "mount", slot: "mount" },
+  mount_bull: { name: "Bull Mount", type: "mount", slot: "mount" },
+  mount_horse: { name: "Horse Mount", type: "mount", slot: "mount" },
+  chariot_normal: { name: "Chariot", type: "chariot", slot: "chariot" },
+  chariot_helios: { name: "Helios Chariot", type: "chariot", slot: "chariot" },
+  potion_strength: { name: "Potion of Strength", type: "potion" },
+  potion_swiftness: { name: "Potion of Swiftness", type: "potion" },
+  potion_fortitude: { name: "Potion of Fortitude", type: "potion" },
+  potion_aegis: { name: "Potion of Aegis", type: "potion" }
+};
+
+let weapons = {
+  sword: { type: "melee", damage: 5, range: 40 },
+  axe: { type: "melee", damage: 6, range: 45 },
+  bow: { type: "projectile", damage: 4, range: 0, projectileSpeed: 360, homing: false },
+  artemisBow: { type: "projectile", damage: 5, range: 0, projectileSpeed: 380, homing: true },
+  spear: { type: "melee", damage: 6, meleeRange: 50, throwSpeed: 380 },
+  trident: { type: "melee", damage: 7, meleeRange: 55, throwSpeed: 360 },
+  lightning: { type: "melee", damage: 7, meleeRange: 50, throwSpeed: 400 },
+  torch: { type: "melee", damage: 5, meleeRange: 40, throwSpeed: 320 }
+};
+
+let currentLevel = 0;
+let levelJumpUsed = false;
+let lastBossBeaten = 0;
+
+let groundObstacles = [];
+let fallingObstacles = [];
+let lowObstacles = [];
+let groundSpawnTimer = 0;
+let fallingSpawnTimer = 0;
+
+let bossDefs = {
+  5:  { name: "Menelaus",     hp: 6  },
+  10: { name: "Agamemnon",    hp: 8  },
+  15: { name: "Diomedes",     hp: 10 },
+  20: { name: "Ajax",         hp: 12 },
+  25: { name: "Achilles",     hp: 15 },
+  30: { name: "Trojan Horse", hp: 20 }
+};
+
+let boss = null;
+
+let timeSlowCharmOwned = false;
+
+let drachma = 0;
+let questProgress = {
+  totalQuests: 5,
+  completed: 0
+};
+let allQuestsComplete = false;
+
+const troyBuildings = [
+  { id: "shop", x: 140, y: groundY - 80, w: 80, h: 80, label: "Shop" },
+  { id: "blacksmith", x: 260, y: groundY - 80, w: 80, h: 80, label: "Blacksmith" },
+  { id: "stables", x: 380, y: groundY - 80, w: 80, h: 80, label: "Stables" },
+  { id: "temple", x: 500, y: groundY - 80, w: 80, h: 80, label: "Temple" },
+  { id: "searchers_lounge", x: 620, y: groundY - 80, w: 80, h: 80, label: "Searcher’s Lounge" }
+];
+
+let shopMode = null; // "shop", "blacksmith", "stables", "temple", "searchers_lounge"
+
+function updateHPHUD() {
+  document.getElementById("hp").textContent = player.hp;
 }
 
-function spawnWeaponDrop(x, y, weaponKey) {
-  const cx = Math.max(20, Math.min(W - 40, x));
-  const cy = Math.max(20, Math.min(H - 40, y));
-  weaponDrops.push({
-    x: cx,
-    y: cy,
-    w: 24,
-    h: 24,
-    weaponKey
-  });
+function updateDrachmaHUD() {
+  document.getElementById("drachma").textContent = drachma;
 }
 
-function maybeSpawnWeaponDropAt(x, y) {
-  const w = getRandomWeaponToDrop();
-  if (w) spawnWeaponDrop(x, y, w);
+function scalePlayerDamage(base) {
+  return Math.round(base * potionDamageMultiplier);
 }
 
-/* =========================================================
-   Helpers
-   ========================================================= */
-function isBossLevel(n) {
-  return bossDefs[n] !== undefined;
+function scaleEnemyDamage(base) {
+  return base;
 }
 
 function collides(a, b) {
@@ -756,24 +513,24 @@ function collides(a, b) {
 }
 
 /* =========================================================
-   Player movement & physics
+   Player update
    ========================================================= */
 function updatePlayer(dt) {
-  let move = 0;
-  if (keys["arrowleft"] || keys["a"]) move -= 1;
-  if (keys["arrowright"] || keys["d"]) move += 1;
+  player.vx = 0;
 
-  player.vx = move * player.speed;
+  if (keys["arrowleft"] || keys["a"]) {
+    player.vx = -player.speed;
+  }
+  if (keys["arrowright"] || keys["d"]) {
+    player.vx = player.speed;
+  }
 
   if ((keys["arrowup"] || keys["w"]) && player.onGround) {
     player.vy = -player.jump;
     player.onGround = false;
   }
 
-  if (!player.onGround) {
-    player.vy += 900 * dt;
-  }
-
+  player.vy += 900 * dt;
   player.x += player.vx * dt;
   player.y += player.vy * dt;
 
@@ -811,7 +568,7 @@ function playerAttack() {
 
   if (weapon.type === "melee") {
     const dmg = scalePlayerDamage(weapon.damage);
-    const range = weapon.range;
+    const range = weapon.range || weapon.meleeRange || 40;
 
     const hitbox = {
       x: player.x + player.w,
@@ -820,25 +577,24 @@ function playerAttack() {
       h: player.h
     };
 
-    // Hit boss
     if (boss && collides(hitbox, boss)) {
       boss.hp -= dmg;
       toast("Hit " + boss.name + "!");
       if (boss.hp <= 0) {
         toast(boss.name + " defeated!");
         lastBossBeaten = currentLevel;
+        drachma += 20;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(boss.x + boss.w / 2, boss.y);
         boss = null;
       }
     }
 
-    // Hit enemies
     for (let i = enemies.length - 1; i >= 0; i--) {
       const e = enemies[i];
       if (!collides(hitbox, e)) continue;
 
       if (e.type === "shield") {
-        // Shield bearer blocks frontal hits if player is in front
         const playerFront = player.x + player.w;
         if (playerFront <= e.x + e.w && playerFront >= e.x) {
           toast("Your strike glances off the shield!");
@@ -848,6 +604,8 @@ function playerAttack() {
 
       e.hp -= dmg;
       if (e.hp <= 0) {
+        drachma += 3;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
         enemies.splice(i, 1);
       }
@@ -917,19 +675,19 @@ function specialMelee() {
     h: player.h
   };
 
-  // Boss
   if (boss && collides(hitbox, boss)) {
     boss.hp -= dmg;
     toast("Critical hit on " + boss.name + "!");
     if (boss.hp <= 0) {
       toast(boss.name + " defeated!");
       lastBossBeaten = currentLevel;
+      drachma += 20;
+      updateDrachmaHUD();
       maybeSpawnWeaponDropAt(boss.x + boss.w / 2, boss.y);
       boss = null;
     }
   }
 
-  // Enemies
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
     if (!collides(hitbox, e)) continue;
@@ -944,12 +702,13 @@ function specialMelee() {
 
     e.hp -= dmg;
     if (e.hp <= 0) {
+      drachma += 3;
+      updateDrachmaHUD();
       maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
       enemies.splice(i, 1);
     }
   }
 
-  // Greek ships (final)
   if (currentLevel === 35 && greekShips.length > 0) {
     for (let i = greekShips.length - 1; i >= 0; i--) {
       const ship = greekShips[i];
@@ -964,6 +723,8 @@ function specialMelee() {
         ship.hp -= dmg;
         toast("Massive hit on Greek ship!");
         if (ship.hp <= 0) {
+          drachma += 20;
+          updateDrachmaHUD();
           maybeSpawnWeaponDropAt(ship.x + ship.w / 2, ship.y - ship.h);
           greekShips.splice(i, 1);
         }
@@ -1064,14 +825,6 @@ function spawnProjectile(x, y, speed, damage, type, fromEnemy = false) {
 /* =========================================================
    Time powers & Time Charms
    ========================================================= */
-let timeSlowActive = false;
-let timeSlowTimer = 0;
-
-let timeFreezeActive = false;
-let timeFreezeTimer = 0;
-
-let lastTimeCharmUseLevel = -999;
-
 function canUseTimeCharm() {
   if (!equipment.charm) {
     toast("No charm equipped.");
@@ -1179,24 +932,16 @@ addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   keys[k] = true;
 
-  /* ============================
-     TITLE SCREEN START (Step 2)
-     ============================ */
   if (gameState === "title" && (e.key === "Enter" || e.key === " ")) {
     gameState = "playing";
     startLevel(0);
     return;
   }
-  /* ============================
-     END TITLE SCREEN BLOCK
-     ============================ */
 
-  // Difficulty hotkeys
   if (e.key === "F1") setDifficulty("easy");
   if (e.key === "F2") setDifficulty("medium");
   if (e.key === "F3") setDifficulty("hard");
 
-  // P + I: grant all potions to inventory
   if ((k === "p" && keys["i"]) || (k === "i" && keys["p"])) {
     const potionIds = [
       "potion_strength",
@@ -1214,13 +959,27 @@ addEventListener("keydown", e => {
     return;
   }
 
-  // Attacks
+  if (gameState === "troy") {
+    if (k === "shift") {
+      toast("Returning to battle...");
+      gameState = "playing";
+      return;
+    }
+  }
+
+  if (gameState === "playing") {
+    if (k === "shift") {
+      toast("You travel to Troy...");
+      gameState = "troy";
+      return;
+    }
+  }
+
   if (e.key === " " || e.key === "Spacebar") playerAttack();
   if (k === "j") specialMelee();
   if (k === "k") specialThrow();
   if (k === "l") specialUltimate();
 
-  // Rolling
   if (k === "arrowdown" && !player.isRolling && player.rollCooldown <= 0) {
     let dir = 0;
     if (keys["arrowleft"] || keys["a"]) dir = -1;
@@ -1233,7 +992,6 @@ addEventListener("keydown", e => {
     toast(dir === 0 ? "Crouch roll!" : dir < 0 ? "Roll left!" : "Roll right!");
   }
 
-  // Weapon selection
   if (k === "q" && weaponsOwned.sword) equipWeapon("sword");
   if (k === "w" && weaponsOwned.axe) equipWeapon("axe");
   if (k === "e" && (weaponsOwned.bow || weaponsOwned.artemisBow)) {
@@ -1244,7 +1002,6 @@ addEventListener("keydown", e => {
   if (k === "z" && weaponsOwned.lightning) equipWeapon("lightning");
   if (k === "v" && weaponsOwned.torch) equipWeapon("torch");
 
-  // Shield toggle
   if (k === "y" && weaponsOwned.shield) {
     shieldActive = !shieldActive;
     equipment.shield = shieldActive ? "shield_item" : null;
@@ -1252,7 +1009,6 @@ addEventListener("keydown", e => {
     toast(shieldActive ? "Shield equipped" : "Shield removed");
   }
 
-  // Helmet of invisibility
   if (k === "x" && gearOwned.helmet) {
     if (helmetActive) {
       toast("Helmet already active this round");
@@ -1267,13 +1023,10 @@ addEventListener("keydown", e => {
     }
   }
 
-  // Inventory
   if (k === "i") openInventory();
 
-  // Cheat
   if (e.key === "9") unlockAll();
 
-  // Level jumps
   const num = parseInt(e.key);
   if (!isNaN(num)) {
     if (num >= 1 && num <= 6) {
@@ -1288,7 +1041,6 @@ addEventListener("keydown", e => {
     }
   }
 
-  // Time Charm activation (H)
   if (k === "h" && gameState === "playing") {
     useEquippedTimeCharm();
   }
@@ -1298,7 +1050,6 @@ addEventListener("keyup", e => {
   keys[e.key.toLowerCase()] = false;
 });
 
-// Mouse wheel for inventory scroll
 canvas.addEventListener("wheel", e => {
   if (gameState === "inventory") {
     e.preventDefault();
@@ -1420,7 +1171,7 @@ function summonRainOfArrows(dmg) {
 }
 
 /* =========================================================
-   Projectile update loop (boss + ships + enemies hit detection)
+   Projectile update loop
    ========================================================= */
 function updateProjectiles(dt) {
   for (let i = projectiles.length - 1; i >= 0; i--) {
@@ -1438,7 +1189,6 @@ function updateProjectiles(dt) {
       continue;
     }
 
-    // Enemy projectiles -> hit player
     if (p.fromEnemy) {
       if (!helmetActive && collides(player, p)) {
         const dmg = p.damage || scaleEnemyDamage(5);
@@ -1446,11 +1196,9 @@ function updateProjectiles(dt) {
         projectiles.splice(i, 1);
         continue;
       }
-      // Enemy arrows do NOT hit boss or ships
       continue;
     }
 
-    // Player projectiles -> hit boss
     if (boss && collides(p, boss)) {
       boss.hp -= p.damage;
       toast("Projectile hit " + boss.name + "!");
@@ -1458,20 +1206,20 @@ function updateProjectiles(dt) {
       if (boss.hp <= 0) {
         toast(boss.name + " defeated!");
         lastBossBeaten = currentLevel;
+        drachma += 20;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(boss.x + boss.w / 2, boss.y);
         boss = null;
       }
       continue;
     }
 
-    // Player projectiles -> hit enemies
     let hitEnemy = false;
     for (let j = enemies.length - 1; j >= 0; j--) {
       const e = enemies[j];
       if (!collides(p, e)) continue;
 
       if (e.type === "shield") {
-        // If projectile comes from left (player side), shield can block
         if (p.vx > 0 && p.x <= e.x + e.w && p.x >= e.x) {
           toast("Arrow deflected by shield bearer!");
           projectiles.splice(i, 1);
@@ -1485,6 +1233,8 @@ function updateProjectiles(dt) {
       hitEnemy = true;
 
       if (e.hp <= 0) {
+        drachma += 3;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
         enemies.splice(j, 1);
       }
@@ -1492,7 +1242,6 @@ function updateProjectiles(dt) {
     }
     if (hitEnemy) continue;
 
-    // Player projectiles -> Greek ships (final)
     if (currentLevel === 35 && greekShips.length > 0) {
       let hitShip = false;
       for (let j = greekShips.length - 1; j >= 0; j--) {
@@ -1510,6 +1259,8 @@ function updateProjectiles(dt) {
           hitShip = true;
 
           if (ship.hp <= 0) {
+            drachma += 20;
+            updateDrachmaHUD();
             maybeSpawnWeaponDropAt(ship.x + ship.w / 2, ship.y - ship.h);
             greekShips.splice(j, 1);
           }
@@ -1550,30 +1301,31 @@ function updateWaves(dt) {
       h: wave.h
     };
 
-    // Boss
     if (boss && collides(hitbox, boss)) {
       boss.hp -= wave.damage;
       toast("Wave smashes " + boss.name + "!");
       if (boss.hp <= 0) {
         toast(boss.name + " defeated by the wave!");
         lastBossBeaten = currentLevel;
+        drachma += 20;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(boss.x + boss.w / 2, boss.y);
         boss = null;
       }
     }
 
-    // Enemies
     for (let j = enemies.length - 1; j >= 0; j--) {
       const e = enemies[j];
       if (!collides(hitbox, e)) continue;
       e.hp -= wave.damage;
       if (e.hp <= 0) {
+        drachma += 3;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
         enemies.splice(j, 1);
       }
     }
 
-    // Greek ships
     if (currentLevel === 35 && greekShips.length > 0) {
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
@@ -1588,6 +1340,8 @@ function updateWaves(dt) {
           ship.hp -= wave.damage;
 
           if (ship.hp <= 0) {
+            drachma += 20;
+            updateDrachmaHUD();
             maybeSpawnWeaponDropAt(ship.x + ship.w / 2, ship.y - ship.h);
             greekShips.splice(j, 1);
           }
@@ -1621,30 +1375,31 @@ function updateLightning(dt) {
       h: strike.h
     };
 
-    // Boss
     if (boss && collides(box, boss)) {
       boss.hp -= strike.damage;
 
       if (boss.hp <= 0) {
         toast(boss.name + " blasted by lightning!");
         lastBossBeaten = currentLevel;
+        drachma += 20;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(boss.x + boss.w / 2, boss.y);
         boss = null;
       }
     }
 
-    // Enemies
     for (let j = enemies.length - 1; j >= 0; j--) {
       const e = enemies[j];
       if (!collides(box, e)) continue;
       e.hp -= strike.damage;
       if (e.hp <= 0) {
+        drachma += 3;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
         enemies.splice(j, 1);
       }
     }
 
-    // Greek ships
     if (currentLevel === 35 && greekShips.length > 0) {
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
@@ -1659,6 +1414,8 @@ function updateLightning(dt) {
           ship.hp -= strike.damage;
 
           if (ship.hp <= 0) {
+            drachma += 20;
+            updateDrachmaHUD();
             maybeSpawnWeaponDropAt(ship.x + ship.w / 2, ship.y - ship.h);
             greekShips.splice(j, 1);
           }
@@ -1696,30 +1453,31 @@ function updateInfernos(dt) {
       return dx * dx + dy * dy <= r2;
     }
 
-    // Boss
     if (boss && inside(boss)) {
       boss.hp -= inf.damage;
 
       if (boss.hp <= 0) {
         toast(boss.name + " consumed by flames!");
         lastBossBeaten = currentLevel;
+        drachma += 20;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(boss.x + boss.w / 2, boss.y);
         boss = null;
       }
     }
 
-    // Enemies
     for (let j = enemies.length - 1; j >= 0; j--) {
       const e = enemies[j];
       if (!inside(e)) continue;
       e.hp -= inf.damage;
       if (e.hp <= 0) {
+        drachma += 3;
+        updateDrachmaHUD();
         maybeSpawnWeaponDropAt(e.x + e.w / 2, e.y);
         enemies.splice(j, 1);
       }
     }
 
-    // Greek ships
     if (currentLevel === 35 && greekShips.length > 0) {
       for (let j = greekShips.length - 1; j >= 0; j--) {
         const ship = greekShips[j];
@@ -1734,6 +1492,8 @@ function updateInfernos(dt) {
           ship.hp -= inf.damage;
 
           if (ship.hp <= 0) {
+            drachma += 20;
+            updateDrachmaHUD();
             maybeSpawnWeaponDropAt(ship.x + ship.w / 2, ship.y - ship.h);
             greekShips.splice(j, 1);
           }
@@ -1782,7 +1542,6 @@ function drawItemIcon(id, x, y, size) {
     case "potion_swiftness": ctx.fillStyle = "#44bbff"; break;
     case "potion_fortitude": ctx.fillStyle = "#66ff66"; break;
     case "potion_aegis":     ctx.fillStyle = "#ddddff"; break;
-
     default: ctx.fillStyle = "#cccccc"; break;
   }
   ctx.fillRect(x, y, size, size);
@@ -1790,7 +1549,7 @@ function drawItemIcon(id, x, y, size) {
 }
 
 /* =========================================================
-   Inventory UI (scrollable, equipment grid on right)
+   Inventory UI
    ========================================================= */
 function drawInventoryUI() {
   ctx.fillStyle = "rgba(0,0,0,0.7)";
@@ -1906,7 +1665,7 @@ function drawInventoryUI() {
 }
 
 /* =========================================================
-   Inventory drag & drop (scroll-aware)
+   Inventory drag & drop
    ========================================================= */
 canvas.addEventListener("mousedown", e => {
   if (gameState !== "inventory") return;
@@ -2104,6 +1863,25 @@ canvas.addEventListener("mouseup", e => {
    Inventory click-to-use for potions
    ========================================================= */
 canvas.addEventListener("click", e => {
+  if (gameState === "troy") {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) * (canvas.width / rect.width);
+    const my = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+    for (const b of troyBuildings) {
+      if (
+        mx >= b.x &&
+        mx <= b.x + b.w &&
+        my >= b.y &&
+        my <= b.y + b.h
+      ) {
+        openBuilding(b.id);
+        return;
+      }
+    }
+    return;
+  }
+
   if (gameState !== "inventory") return;
 
   const rect = canvas.getBoundingClientRect();
@@ -2116,7 +1894,6 @@ canvas.addEventListener("click", e => {
   const INVENTORY_AREA_WIDTH = 320;
   const visibleHeight = invUI.h - (invUI.padding + 80 + 24);
 
-  // Only inside inventory grid area
   if (mx < invX || mx > invX + INVENTORY_AREA_WIDTH) return;
   if (my < gridInvY || my > gridInvY + visibleHeight) return;
 
@@ -2180,7 +1957,6 @@ function applyEquipmentEffects() {
     player.speed *= 1.6;
   }
 
-  // Apply potion movement buffs
   player.speed *= potionSpeedMultiplier;
   player.jump *= potionJumpMultiplier;
 }
@@ -2198,7 +1974,7 @@ function addItemToInventory(id) {
 }
 
 /* =========================================================
-   Allies drawing (PNG sprites)
+   Allies drawing
    ========================================================= */
 function drawAllies() {
   allies.forEach(a => {
@@ -2211,14 +1987,13 @@ function drawAllies() {
       else if (a.type === "priam") ctx.fillStyle = "#ffcc66";
       else if (a.type === "helen") ctx.fillStyle = "#ff99ff";
       else ctx.fillStyle = "#88ff88";
-
       ctx.fillRect(a.x, a.y, a.w, a.h);
     }
   });
 }
 
 /* =========================================================
-   Allies behavior (HP version)
+   Allies behavior
    ========================================================= */
 function updateAllies(dt) {
   allies.forEach(a => {
@@ -2320,17 +2095,6 @@ function spawnAlliesForLevel() {
 /* =========================================================
    Boss & ship spawning
    ========================================================= */
-const bossDefs = {
-  5:  { name: "Menelaus",     hp: 6  },
-  10: { name: "Agamemnon",    hp: 8  },
-  15: { name: "Diomedes",     hp: 10 },
-  20: { name: "Ajax",         hp: 12 },
-  25: { name: "Achilles",     hp: 15 },
-  30: { name: "Trojan Horse", hp: 20 }
-};
-
-let boss = null;
-
 function spawnBoss(def) {
   boss = {
     name: def.name,
@@ -2341,9 +2105,6 @@ function spawnBoss(def) {
     h: 100
   };
 }
-
-let boat = null;
-let greekShips = [];
 
 function spawnGreekShipsForFinal() {
   greekShips = [];
@@ -2364,13 +2125,6 @@ function spawnGreekShipsForFinal() {
 /* =========================================================
    Obstacles
    ========================================================= */
-let groundObstacles = [];
-let fallingObstacles = [];
-let lowObstacles = [];
-
-let groundSpawnTimer = 0;
-let fallingSpawnTimer = 0;
-
 function spawnGroundObstacle() {
   if (atSea) {
     groundObstacles.push({
@@ -2421,7 +2175,6 @@ function startLevel(n) {
   finalVictory = false;
   atSea = (n >= 31 && n <= 35);
 
-  // Potions reset at the start of each level
   potionDamageMultiplier = 1;
   potionSpeedMultiplier = 1;
   potionJumpMultiplier = 1;
@@ -2487,7 +2240,7 @@ function startLevel(n) {
   document.getElementById("level").textContent = n;
 
   if (n === 0) {
-    toast("Tutorial: Move (Arrows/WASD), Jump (Up/W), Attack (Space), Specials (J/K/L), Roll (Down), Switch (Q/W/E/R/T/Z/V/Y/X), Inventory (I), Time Charm (H).");
+    toast("Tutorial: Move (Arrows/WASD), Jump (Up/W), Attack (Space), Specials (J/K/L), Roll (Down), Switch (Q/W/E/R/T/Z/V/Y/X), Inventory (I), Time Charm (H), Shift to visit Troy.");
     return;
   }
 
@@ -2503,7 +2256,6 @@ function startLevel(n) {
     toast("Escape by sea! Avoid debris and arrows.");
   }
 
-  // Spawn Greek soldiers for this level
   spawnCoreEnemiesForLevel();
 
   applyEquipmentEffects();
@@ -2511,7 +2263,7 @@ function startLevel(n) {
 }
 
 /* =========================================================
-   Boss collision damage (HP version)
+   Boss collision damage
    ========================================================= */
 function applyBossCollisionDamage() {
   if (!boss) return;
@@ -2524,7 +2276,6 @@ function applyBossCollisionDamage() {
         return;
       }
 
-      // Aegis potion: one free hit
       if (potionAegisActive) {
         potionAegisActive = false;
         damageCooldown = 0.4;
@@ -2558,7 +2309,7 @@ function applyBossCollisionDamage() {
 }
 
 /* =========================================================
-   Greek ship collision damage (HP version)
+   Greek ship collision damage
    ========================================================= */
 function applyShipCollisionDamage(ship) {
   const shipBox = {
@@ -2608,7 +2359,7 @@ function applyShipCollisionDamage(ship) {
 }
 
 /* =========================================================
-   Obstacle damage (HP version)
+   Obstacle damage
    ========================================================= */
 function applyObstacleDamage(dmg, message) {
   if (damageCooldown <= 0 && !deathLock) {
@@ -2700,6 +2451,8 @@ function checkLevelProgress() {
     if (!boss && weaponDrops.length === 0 && enemies.length === 0) {
       levelComplete = true;
       toast("Boss defeated!");
+      drachma += 10;
+      updateDrachmaHUD();
       setTimeout(() => startLevel(currentLevel + 1), 1200);
     }
   }
@@ -2708,6 +2461,8 @@ function checkLevelProgress() {
     if (player.x + player.w >= W - 5) {
       levelComplete = true;
       toast("Level Complete!");
+      drachma += 10;
+      updateDrachmaHUD();
       setTimeout(() => startLevel(currentLevel + 1), 800);
     }
   }
@@ -2716,6 +2471,8 @@ function checkLevelProgress() {
     if (player.x + player.w >= W - 5) {
       levelComplete = true;
       toast("You sail onward...");
+      drachma += 10;
+      updateDrachmaHUD();
       setTimeout(() => startLevel(currentLevel + 1), 800);
     }
   }
@@ -2730,7 +2487,7 @@ function checkLevelProgress() {
 }
 
 /* =========================================================
-   Weapon drop pickup logic (now includes potions)
+   Weapon drop pickup logic
    ========================================================= */
 function updateWeaponDrops() {
   for (let i = weaponDrops.length - 1; i >= 0; i--) {
@@ -2800,6 +2557,11 @@ function drawTitleScreen() {
   } else {
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#fff";
+    ctx.font = "32px sans-serif";
+    ctx.fillText("Escape From Troy", W / 2 - 140, H / 2);
+    ctx.font = "18px sans-serif";
+    ctx.fillText("Press Enter or Space to begin", W / 2 - 150, H / 2 + 40);
   }
 }
 
@@ -2807,6 +2569,38 @@ function drawTitleScreen() {
    Drawing
    ========================================================= */
 function drawBackground() {
+  if (gameState === "troy") {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#2b1b0a");
+    g.addColorStop(1, "#4a2f14");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = "#3b2b1a";
+    ctx.fillRect(0, groundY, W, 64);
+
+    ctx.fillStyle = "#cfa96b";
+    ctx.font = "22px sans-serif";
+    ctx.fillText("Troy - Home Hub (Click buildings, Shift to return)", 40, 60);
+
+troyBuildings.forEach(b => {
+  const img = troyBuildingImages[b.id];
+
+  if (img && img.complete && img.naturalWidth > 0) {
+    ctx.drawImage(img, b.x, b.y, b.w, b.h);
+  } else {
+    // fallback if image missing
+    ctx.fillStyle = "#663300";
+    ctx.fillRect(b.x, b.y, b.w, b.h);
+  }
+
+  ctx.fillStyle = "#fff";
+  ctx.font = "12px sans-serif";
+  ctx.fillText(b.label, b.x + 4, b.y + b.h + 14);
+});
+    return;
+  }
+
   if (atSea) {
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, "#031427");
@@ -2937,12 +2731,10 @@ function drawWeaponDrops() {
       case "mount_horse": ctx.fillStyle = "#cc9966"; break;
       case "chariot_normal": ctx.fillStyle = "#999999"; break;
       case "chariot_helios": ctx.fillStyle = "#ffdd55"; break;
-
       case "potion_strength":  ctx.fillStyle = "#ff4444"; break;
       case "potion_swiftness": ctx.fillStyle = "#44bbff"; break;
       case "potion_fortitude": ctx.fillStyle = "#66ff66"; break;
       case "potion_aegis":     ctx.fillStyle = "#ddddff"; break;
-
       default:           ctx.fillStyle = "#cccccc"; break;
     }
     ctx.fillRect(drop.x, drop.y, drop.w, drop.h);
@@ -2975,7 +2767,6 @@ function drawLightningStrikes() {
 function drawInfernos() {
   infernos.forEach(inf => {
     if (!inf.alive) return;
-
     const g = ctx.createRadialGradient(
       inf.x, inf.y, inf.radius * 0.1,
       inf.x, inf.y, inf.radius
@@ -3034,27 +2825,31 @@ function drawFinalVictory() {
 function draw() {
   ctx.clearRect(0, 0, W, H);
 
-  // === TITLE SCREEN CHECK (Step 2) ===
   if (gameState === "title") {
     drawTitleScreen();
     return;
   }
 
   drawBackground();
-  drawBoat();
-  drawPlayer();
-  drawBoss();
-  drawGreekShips();
-  drawObstacles();
-  drawProjectiles();
-  drawWeaponDrops();
-  drawWaves();
-  drawLightningStrikes();
-  drawInfernos();
-  drawEnemies();
-  drawAllies();
-  drawLevelJumpWarning();
-  drawFinalVictory();
+
+  if (gameState !== "troy") {
+    drawBoat();
+    drawPlayer();
+    drawBoss();
+    drawGreekShips();
+    drawObstacles();
+    drawProjectiles();
+    drawWeaponDrops();
+    drawWaves();
+    drawLightningStrikes();
+    drawInfernos();
+    drawEnemies();
+    drawAllies();
+    drawLevelJumpWarning();
+    drawFinalVictory();
+  } else {
+    drawPlayer();
+  }
 
   if (gameState === "inventory") {
     drawInventoryUI();
@@ -3093,16 +2888,16 @@ function update(now) {
     ? 0
     : (timeSlowActive ? rawDt * 0.5 : rawDt);
 
-  if (gameState === "playing") {
+  if (gameState === "playing" || gameState === "troy") {
     t += rawDt;
 
     updatePlayer(rawDt);
 
-    if (atSea && boat && currentLevel >= 31 && currentLevel <= 34) {
+    if (atSea && boat && currentLevel >= 31 && currentLevel <= 34 && gameState === "playing") {
       boat.x += 60 * worldDt;
     }
 
-    if (atSea && boat && currentLevel >= 31 && currentLevel <= 35) {
+    if (atSea && boat && currentLevel >= 31 && currentLevel <= 35 && gameState === "playing") {
       if (player.x < boat.x) player.x = boat.x;
       if (player.x + player.w > boat.x + boat.w) player.x = boat.x + boat.w - player.w;
 
@@ -3114,60 +2909,61 @@ function update(now) {
       }
     }
 
-    updateProjectiles(worldDt);
-    updateWaves(worldDt);
-    updateLightning(worldDt);
-    updateInfernos(worldDt);
-    updateObstacles(worldDt);
-    updateEnemies(worldDt);
-    updateAllies(worldDt);
-    updateWeaponDrops();
+    if (gameState === "playing") {
+      updateProjectiles(worldDt);
+      updateWaves(worldDt);
+      updateLightning(worldDt);
+      updateInfernos(worldDt);
+      updateObstacles(worldDt);
+      updateEnemies(worldDt);
+      updateAllies(worldDt);
+      updateWeaponDrops();
 
-    applyBossCollisionDamage();
+      applyBossCollisionDamage();
 
-    // Trojan Horse spawns soldiers periodically
-    if (boss && boss.name === "Trojan Horse") {
-      trojanSpawnTimer += worldDt;
-      if (trojanSpawnTimer > 3) {
-        trojanSpawnTimer = 0;
-        const spawnTypes = ["foot", "archer", "shield", "spear"];
-        for (let i = 0; i < 3; i++) {
-          const type = spawnTypes[Math.floor(Math.random() * spawnTypes.length)];
-          spawnEnemy(type, boss.x - 40 - i * 30, groundY - 32);
-        }
-        toast("The Trojan Horse disgorges Greek soldiers!");
-      }
-    }
-
-    if (currentLevel === 35) {
-      for (let i = greekShips.length - 1; i >= 0; i--) {
-        const ship = greekShips[i];
-        ship.x += ship.vx * worldDt;
-
-        applyShipCollisionDamage(ship);
-
-        if (ship.x + ship.w < 0) {
-          greekShips.splice(i, 1);
+      if (boss && boss.name === "Trojan Horse") {
+        trojanSpawnTimer += worldDt;
+        if (trojanSpawnTimer > 3) {
+          trojanSpawnTimer = 0;
+          const spawnTypes = ["foot", "archer", "shield", "spear"];
+          for (let i = 0; i < 3; i++) {
+            const type = spawnTypes[Math.floor(Math.random() * spawnTypes.length)];
+            spawnEnemy(type, boss.x - 40 - i * 30, groundY - 32);
+          }
+          toast("The Trojan Horse disgorges Greek soldiers!");
         }
       }
-    }
 
-    if (!isBossLevel(currentLevel) && currentLevel !== 35) {
-      groundSpawnTimer += worldDt;
-      if (groundSpawnTimer > 2) {
-        if (Math.random() < 0.25) spawnLowObstacle();
-        else spawnGroundObstacle();
-        groundSpawnTimer = 0;
+      if (currentLevel === 35) {
+        for (let i = greekShips.length - 1; i >= 0; i--) {
+          const ship = greekShips[i];
+          ship.x += ship.vx * worldDt;
+
+          applyShipCollisionDamage(ship);
+
+          if (ship.x + ship.w < 0) {
+            greekShips.splice(i, 1);
+          }
+        }
       }
 
-      fallingSpawnTimer += worldDt;
-      if (fallingSpawnTimer > 1.5) {
-        spawnFallingObstacle();
-        fallingSpawnTimer = 0;
-      }
-    }
+      if (!isBossLevel(currentLevel) && currentLevel !== 35) {
+        groundSpawnTimer += worldDt;
+        if (groundSpawnTimer > 2) {
+          if (Math.random() < 0.25) spawnLowObstacle();
+          else spawnGroundObstacle();
+          groundSpawnTimer = 0;
+        }
 
-    checkLevelProgress();
+        fallingSpawnTimer += worldDt;
+        if (fallingSpawnTimer > 1.5) {
+          spawnFallingObstacle();
+          fallingSpawnTimer = 0;
+        }
+      }
+
+      checkLevelProgress();
+    }
   }
 
   draw();
@@ -3194,7 +2990,7 @@ function updateEquipHUD() {
    Inventory open/close
    ========================================================= */
 function openInventory() {
-  if (gameState === "playing") {
+  if (gameState === "playing" || gameState === "troy") {
     gameState = "inventory";
     inventoryScroll = 0;
     toast("Inventory opened");
@@ -3241,6 +3037,9 @@ function unlockAll() {
     addItemToInventory(allIds[i]);
   }
 
+  drachma += 999;
+  updateDrachmaHUD();
+
   toast("All weapons, mounts, chariots, charms, and potions activated");
 }
 
@@ -3252,12 +3051,304 @@ function toast(msg) {
 }
 
 /* =========================================================
+   Difficulty stub
+   ========================================================= */
+function setDifficulty(d) {
+  toast("Difficulty set to " + d);
+}
+
+/* =========================================================
+   Enemy spawning stub
+   ========================================================= */
+function spawnCoreEnemiesForLevel() {
+  enemies = [];
+  if (!isBossLevel(currentLevel) && currentLevel > 0 && currentLevel < 31) {
+    for (let i = 0; i < 5; i++) {
+      spawnEnemy("foot", 200 + i * 80, groundY - 32);
+    }
+  }
+}
+
+function spawnEnemy(type, x, y) {
+  enemies.push({
+    type,
+    x,
+    y,
+    w: 24,
+    h: 32,
+    hp: 4,
+    vx: -60
+  });
+}
+
+function updateEnemies(dt) {
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    e.x += e.vx * dt;
+    if (e.x + e.w < 0) {
+      enemies.splice(i, 1);
+    }
+  }
+}
+
+function maybeSpawnWeaponDropAt(x, y) {
+  // simple random drop
+  if (Math.random() < 0.2) {
+    weaponDrops.push({
+      x,
+      y,
+      w: 20,
+      h: 20,
+      weaponKey: "potion_strength"
+    });
+  }
+}
+
+function isBossLevel(n) {
+  return !!bossDefs[n];
+}
+
+/* =========================================================
+   TROY BUILDINGS & SHOPS
+   ========================================================= */
+const shopOverlay = document.getElementById("shopOverlay");
+const shopGrid = document.getElementById("shopGrid");
+const shopTitle = document.getElementById("shopTitle");
+const shopCloseBtn = document.getElementById("shopCloseBtn");
+const questInfo = document.getElementById("questInfo");
+
+shopCloseBtn.addEventListener("click", () => {
+  closeShopUI();
+});
+
+function openBuilding(id) {
+  if (id === "shop") {
+    openShopUI("shop");
+  } else if (id === "blacksmith") {
+    openShopUI("blacksmith");
+  } else if (id === "stables") {
+    openShopUI("stables");
+  } else if (id === "temple") {
+    openShopUI("temple");
+  } else if (id === "searchers_lounge") {
+    openShopUI("searchers_lounge");
+  }
+}
+
+function openShopUI(mode) {
+  shopMode = mode;
+  shopGrid.innerHTML = "";
+  questInfo.style.display = "none";
+
+  if (mode === "shop") {
+    shopTitle.textContent = "Troy Shop";
+    const items = [
+      { id: "sword", cost: 15, label: "Sword" },
+      { id: "axe", cost: 15, label: "Axe" },
+      { id: "bow", cost: 15, label: "Bow" },
+      { id: "spear", cost: 17, label: "Spear" },
+      { id: "shield_item", cost: 20, label: "Shield" },
+      { id: "chariot_normal", cost: 25, label: "Chariot" },
+      { id: "potion_strength", cost: 7, label: "Str" },
+      { id: "potion_swiftness", cost: 7, label: "Swift" },
+      { id: "potion_fortitude", cost: 7, label: "Fort" },
+      { id: "potion_aegis", cost: 7, label: "Aegis" }
+    ];
+    buildShopItems(items, buyShopItem);
+
+  } else if (mode === "blacksmith") {
+    shopTitle.textContent = "Blacksmith (Upgrades)";
+    const items = [
+      { id: "sword", cost: 12, label: "Sword +1" },
+      { id: "axe", cost: 12, label: "Axe +1" },
+      { id: "bow", cost: 12, label: "Bow +1" },
+      { id: "spear", cost: 14, label: "Spear +1" },
+      { id: "shield_item", cost: 17, label: "Shield +" },
+      { id: "chariot_normal", cost: 22, label: "Chariot +" }
+    ];
+    buildShopItems(items, upgradeItem);
+
+  } else if (mode === "stables") {
+    shopTitle.textContent = "Stables";
+    const items = [
+      { id: "mount_lion", cost: 20, label: "Lion" },
+      { id: "mount_pegasus", cost: 20, label: "Pegasus" },
+      { id: "mount_bull", cost: 20, label: "Bull" },
+      { id: "mount_horse", cost: 10, label: "Horse" }
+    ];
+    buildShopItems(items, buyShopItem);
+
+  } else if (mode === "temple") {
+    shopTitle.textContent = "Temple";
+    const items = [
+      { id: "trident", cost: 35, label: "Trident" },
+      { id: "lightning", cost: 35, label: "Lightning" },
+      { id: "torch", cost: 35, label: "Torch" },
+      { id: "artemisBow", cost: 35, label: "Artemis" },
+      { id: "helmet_invisibility", cost: 35, label: "Helmet" },
+      { id: "chaos_charm", cost: 35, label: "Chaos" },
+      { id: "blood_charm", cost: 35, label: "Blood" },
+      { id: "time_skip_charm", cost: 35, label: "Skip" },
+      { id: "time_slow_charm", cost: 35, label: "Slow" },
+      { id: "time_rewind_charm", cost: 35, label: "Rewind" },
+      { id: "time_freeze_charm", cost: 35, label: "Freeze" }
+    ];
+    buildShopItems(items, buyShopItem);
+
+  } else if (mode === "searchers_lounge") {
+    shopTitle.textContent = "Searcher’s Lounge";
+    questInfo.style.display = "block";
+    questInfo.textContent = `Quests: ${questProgress.completed}/${questProgress.totalQuests}`;
+
+    const items = [];
+    if (questProgress.completed >= questProgress.totalQuests) {
+      items.push({ id: "reward", cost: 0, label: "Claim Rewards" });
+    }
+
+    buildShopItems(items, claimSearchersRewards);
+  }
+
+  shopOverlay.style.display = "block";
+}
+
+function closeShopUI() {
+  shopOverlay.style.display = "none";
+  shopMode = null;
+}
+
+function buildShopItems(items, handler) {
+  items.forEach(it => {
+    const div = document.createElement("div");
+    div.className = "shopItem";
+    div.dataset.id = it.id;
+    div.dataset.cost = it.cost;
+
+    const costSpan = document.createElement("div");
+    costSpan.className = "shopCost";
+    costSpan.textContent = it.cost > 0 ? it.cost + " D" : "";
+    div.appendChild(costSpan);
+
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = it.label;
+    div.appendChild(labelSpan);
+
+    div.addEventListener("click", () => {
+      handler(it.id, it.cost);
+    });
+
+    shopGrid.appendChild(div);
+  });
+}
+
+function canAfford(cost) {
+  return drachma >= cost;
+}
+
+function spendDrachma(cost) {
+  drachma -= cost;
+  updateDrachmaHUD();
+}
+
+function buyShopItem(id, cost) {
+  if (!canAfford(cost)) {
+    toast("Not enough drachma!");
+    return;
+  }
+
+  if (id === "shield_item") {
+    weaponsOwned.shield = true;
+  } else if (id === "chariot_normal") {
+    // nothing special, just item
+  } else if (id === "sword" || id === "axe" || id === "bow" || id === "spear" ||
+             id === "trident" || id === "lightning" || id === "torch" || id === "artemisBow") {
+    weaponsOwned[id] = true;
+  } else if (id === "helmet_invisibility") {
+    gearOwned.helmet = true;
+  }
+
+  spendDrachma(cost);
+  addItemToInventory(id);
+  toast("Purchased " + (itemData[id] ? itemData[id].name : id));
+}
+
+function upgradeItem(id, cost) {
+  if (!canAfford(cost)) {
+    toast("Not enough drachma!");
+    return;
+  }
+
+  if (id === "shield_item" || id === "chariot_normal") {
+    const owned = inventory.some(it => it && it.id === id);
+    if (!owned) {
+      toast("You must own this first.");
+      return;
+    }
+    spendDrachma(cost);
+    toast("Upgraded " + (itemData[id] ? itemData[id].name : id));
+    return;
+  }
+
+  if (!weapons[id]) {
+    toast("Cannot upgrade this.");
+    return;
+  }
+
+  const owned = weaponsOwned[id] || inventory.some(it => it && it.id === id);
+  if (!owned) {
+    toast("You must own this weapon first.");
+    return;
+  }
+
+  spendDrachma(cost);
+  weapons[id].damage += 1;
+  toast("Upgraded " + (itemData[id] ? itemData[id].name : id) + " damage!");
+}
+
+function claimSearchersRewards(id, cost) {
+  if (questProgress.completed < questProgress.totalQuests) {
+    toast("Complete all quests first.");
+    return;
+  }
+
+  giveSearchersRewards();
+  questProgress.completed = 0;
+  allQuestsComplete = false;
+  questInfo.textContent = `Quests: ${questProgress.completed}/${questProgress.totalQuests}`;
+  shopGrid.innerHTML = "";
+}
+
+function giveSearchersRewards() {
+  const pool = [
+    "sword","axe","bow","spear","shield_item","trident","lightning",
+    "torch","artemisBow","helmet_invisibility","chaos_charm",
+    "blood_charm","time_skip_charm","time_slow_charm",
+    "time_rewind_charm","time_freeze_charm",
+    "mount_lion","mount_pegasus","mount_bull","mount_horse",
+    "chariot_normal","chariot_helios",
+    "potion_strength","potion_swiftness",
+    "potion_fortitude","potion_aegis"
+  ];
+
+  const owned = new Set(inventory.filter(i => i).map(i => i.id));
+  const available = pool.filter(id => !owned.has(id));
+
+  const rewards = [];
+
+  for (let i = 0; i < 3 && available.length > 0; i++) {
+    const pick = available.splice(Math.floor(Math.random() * available.length), 1)[0];
+    rewards.push(pick);
+    addItemToInventory(pick);
+  }
+
+  toast("You received " + rewards.length + " rare items!");
+}
+
+/* =========================================================
    Init
    ========================================================= */
-// Don't start a level yet—stay on title
-// startLevel(0);
 updateEquipHUD();
 updateHPHUD();
+updateDrachmaHUD();
 requestAnimationFrame(update);
 </script>
 </body>
